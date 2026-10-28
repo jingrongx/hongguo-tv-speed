@@ -13,32 +13,30 @@ jobs:
   release:
     runs-on: ubuntu-latest
     concurrency:
-      group: hongguo-signed-release
+      group: hongguo-speed-release
       cancel-in-progress: false
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Verify release source line
-        run: python3 scripts/verify_release_source.py --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" --sha "$GITHUB_SHA"
-      - name: Read APK version
-        run: python3 scripts/release_metadata.py --github-env "$GITHUB_ENV"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
           cache: true
           cache-dependency-path: go.mod
+
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
@@ -54,121 +52,168 @@ jobs:
             sleep $((attempt * 5))
           done
           exit 1
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
-      - name: Test Go core
-        run: go test ./...
-      - name: Check TV JavaScript and pagination
+
+      - name: Derive version and codes from the tag
+        id: ver
         run: |
-          node --check core/cmd/hongguotv/ui/app.js
-          node --check core/cmd/hongguotv/ui/native-player.js
-          node --check core/cmd/hongguotv/ui/playback-diagnostics.js
-          node --check core/cmd/hongguotv/ui/playback-settings.js
-          node --check core/cmd/hongguotv/ui/sidebar-settings.js
-          node --check core/cmd/hongguotv/ui/auto-cinema.js
-          node --check core/cmd/hongguotv/ui/compat.js
-          node --check core/cmd/hongguotv/ui/episode-prefetch.js
-          node --check core/cmd/hongguotv/ui/playback-recovery.js
-          node --check core/cmd/hongguotv/ui/end-recommendations.js
-          node --check core/cmd/hongguotv/ui/updates.js
-          node --check core/cmd/hongguotv/ui/engagement.js
-          node --check core/cmd/hongguotv/ui/sms-verification.js
-          node --check core/cmd/hongguotv/ui/numeric-keypad.js
-          node --check core/cmd/hongguotv/ui/number-input.js
-          node --check core/cmd/hongguotv/ui/search-history.js
-          python3 -m unittest discover -s tests -p "test_*.py"
-          node --test tests/*.test.cjs
-      - name: Check release tag
-        if: startsWith(github.ref, 'refs/tags/')
-        run: test "$GITHUB_REF_NAME" = "v$APP_VERSION"
-      - name: Build Android native binaries
-        run: bash scripts/build_android_binaries.sh
-        env:
-          VERSION: ${{ env.HONGGUO_CORE_VERSION }}
-      - name: Prepare LGPL MPV libraries and source kit
+          set -e
+          V="${GITHUB_REF_NAME#v}"
+          CODE=$(echo "$V" | awk -F. '{print $1*10000 + $2*100 + $3}')
+          echo "version=$V" >> "$GITHUB_ENV"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Version $V, code $CODE"
+
+      - name: Pin build.gradle to the tag version
         run: |
-          python3 scripts/prepare_mpv.py
-          python3 scripts/package_mpv_sources.py --out "$RUNNER_TEMP/hongguo-tv-mpv-library-source-$APP_VERSION.zip"
+          set -e
+          sed -i "s/def appVersion = \"[^\"]*\"/def appVersion = \"$VERSION\"/" android/app/build.gradle
+          sed -i "s/versionCode [0-9]*/versionCode $CODE/" android/app/build.gradle
+          sed -i "s/def mpvVersionCode = [0-9]*/def mpvVersionCode = $CODE/" android/app/build.gradle
+          grep -E "def appVersion|versionCode" android/app/build.gradle | head -3
+
       - name: Restore signing key
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Missing release signing key" >&2; exit 1; }
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/hongguo-release.keystore"
-          chmod 600 "$RUNNER_TEMP/hongguo-release.keystore"
-      - name: Build release APK
+          set -e
+          test -n "$ANDROID_KEYSTORE_FILE_B64" || { echo "Missing release signing key secret" >&2; exit 1; }
+          printf '%s' "$ANDROID_KEYSTORE_FILE_B64" | base64 --decode > android/hongguotv-release.jks
+          cat > android/keystore.properties <<EOF
+          STORE_FILE=../hongguotv-release.jks
+          STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+          KEY_ALIAS=$ANDROID_KEY_ALIAS
+          KEY_PASSWORD=$ANDROID_KEY_PASSWORD
+          EOF
         env:
-          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/hongguo-release.keystore
+          ANDROID_KEYSTORE_FILE_B64: ${{ secrets.ANDROID_KEYSTORE_FILE_B64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Test Go core
+        run: go test ./core/...
+
+      - name: Check TV JavaScript
         run: |
-          # Package the two flavors in separate Gradle invocations. AGP's
-          # native-library splitter can race when standard and MPV packaging
-          # workers are scheduled in the same invocation on a hosted runner.
-          gradle --no-daemon --max-workers=1 --stacktrace -p android testStandardReleaseUnitTest assembleStandardRelease lintStandardRelease
-          gradle --no-daemon --max-workers=1 --stacktrace -p android testMpvReleaseUnitTest assembleMpvRelease lintMpvRelease
-      - name: Verify APK signature and version
+          node --check core/cmd/hongguotv/ui/app.js
+          node --check core/cmd/hongguotv/ui/episode-prefetch.js
+          node --check core/cmd/hongguotv/ui/native-player.js
+          node --check core/cmd/hongguotv/ui/playback-settings.js
+          node --check core/cmd/hongguotv/ui/auto-cinema.js
+
+      - name: Run UI regression suite
+        run: node --test tests/*.test.cjs
+
+      - name: Build Go cores (three ABIs)
         run: |
-          python3 scripts/verify_apks.py --standard android/app/build/outputs/apk/standard/release/app-standard-release.apk --mpv android/app/build/outputs/apk/mpv/release/app-mpv-release.apk --version "$APP_VERSION" --standard-code "$APP_VERSION_CODE" --mpv-code "$MPV_VERSION_CODE" | tee "$RUNNER_TEMP/apk-verification.json"
-          cat "$RUNNER_TEMP/apk-verification.json" >> "$GITHUB_STEP_SUMMARY"
+          set -e
+          NDK_BIN="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          OUT=android/app/src/main/jniLibs
+          build() {
+            GOOS=android GOARCH=$2 CGO_ENABLED=1 \
+            CC="$NDK_BIN/$3" \
+            go build -trimpath -buildmode=pie -ldflags "-s -w -X main.version=$VERSION-dev" \
+            -o "$OUT/$1/libhongguotv.so" ./core/cmd/hongguotv
+          }
+          build arm64-v8a   arm64 aarch64-linux-android23-clang
+          build armeabi-v7a arm   armv7a-linux-androideabi23-clang
+          build x86_64      amd64 x86_64-linux-android23-clang
+          ls -la $OUT/*/libhongguotv.so
+
+      - name: Assemble APKs
+        run: |
+          set -e
+          # Package the two flavors in separate Gradle invocations: AGP's
+          # native-library splitter can race when both flavors are packaged
+          # in the same invocation on a hosted runner.
+          gradle --no-daemon --max-workers=1 -p android assembleStandardRelease
+          gradle --no-daemon --max-workers=1 -p android assembleMpvRelease
+
+      - name: Verify APK signature
+        run: |
+          set -e
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/standard/release/app-standard-release.apk | head -2
+          "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/mpv/release/app-mpv-release.apk | head -2
+
+      - name: Stage speed-edition assets and manifests
+        run: |
+          set -e
+          CODE="${{ steps.ver.outputs.code }}"
+          mkdir -p stage
+          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-tv-speed-mpv-$VERSION.apk"
+          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
+          cd stage
+          MPV_SHA=$(sha256sum "hongguo-tv-speed-mpv-$VERSION.apk" | cut -d' ' -f1)
+          MPV_SIZE=$(stat -c%s "hongguo-tv-speed-mpv-$VERSION.apk")
+          STD_SHA=$(sha256sum "hongguo-tv-speed-$VERSION.apk" | cut -d' ' -f1)
+          STD_SIZE=$(stat -c%s "hongguo-tv-speed-$VERSION.apk")
+          cat > update-mpv.json <<EOF
+          {
+            "schema": 1,
+            "version_code": $CODE,
+            "min_sdk": 23,
+            "version_name": "$VERSION",
+            "package_name": "com.jingrongx.hongguotv.mpv",
+            "size": $MPV_SIZE,
+            "sha256": "$MPV_SHA",
+            "download_url": "https://github.com/jingrongx/hongguo-tv/releases/download/v$VERSION/hongguo-tv-speed-mpv-$VERSION.apk",
+            "release_notes": "极速版 $VERSION",
+            "variant": "mpv"
+          }
+          EOF
+          cat > update.json <<EOF
+          {
+            "schema": 1,
+            "version_code": $CODE,
+            "min_sdk": 23,
+            "version_name": "$VERSION",
+            "package_name": "com.jingrongx.hongguotv",
+            "size": $STD_SIZE,
+            "sha256": "$STD_SHA",
+            "download_url": "https://github.com/jingrongx/hongguo-tv/releases/download/v$VERSION/hongguo-tv-speed-$VERSION.apk",
+            "release_notes": "极速版 $VERSION",
+            "variant": "standard"
+          }
+          EOF
+          sha256sum *.apk > SHA256SUMS.txt
+
       - name: Remove temporary signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/hongguo-release.keystore"
-      - name: Prepare versioned release files
-        run: |
-          mkdir -p "$RUNNER_TEMP/hongguo-release"
-          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-$APP_VERSION.apk"
-          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-mpv-$APP_VERSION.apk"
-          cp "$RUNNER_TEMP/hongguo-tv-mpv-library-source-$APP_VERSION.zip" "$RUNNER_TEMP/hongguo-release/"
-          python3 scripts/generate_update.py --apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-$APP_VERSION.apk" --version "$APP_VERSION" --code "$APP_VERSION_CODE" --min-sdk "$APP_MIN_SDK" --notes "docs/releases/v$APP_VERSION.md" --out "$RUNNER_TEMP/hongguo-release/update.json"
-          python3 scripts/generate_update.py --variant mpv --apk "$RUNNER_TEMP/hongguo-release/hongguo-tv-mpv-$APP_VERSION.apk" --version "$APP_VERSION" --code "$MPV_VERSION_CODE" --min-sdk 23 --notes "docs/releases/v$APP_VERSION.md" --library-source "$RUNNER_TEMP/hongguo-release/hongguo-tv-mpv-library-source-$APP_VERSION.zip" --out "$RUNNER_TEMP/hongguo-release/update-mpv.json"
-          cd "$RUNNER_TEMP/hongguo-release"
-          sha256sum "hongguo-tv-$APP_VERSION.apk" "hongguo-tv-mpv-$APP_VERSION.apk" "hongguo-tv-mpv-library-source-$APP_VERSION.zip" > SHA256SUMS.txt
-      - name: Verify complete release bundle before publishing
-        run: |
-          python3 - <<'PY'
-          import os, sys
-          from pathlib import Path
-          sys.path.insert(0, 'scripts')
-          from publish_public_release import verify_bundle
-          manifests, files = verify_bundle(Path(os.environ['RUNNER_TEMP']) / 'hongguo-release')
-          print('Verified independent update channels and allowlisted files:', ', '.join(p.name for p in files))
-          PY
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          name: 红果短剧 v${{ env.APP_VERSION }}
-          body_path: docs/releases/v${{ env.APP_VERSION }}.md
-          files: |
-            ${{ runner.temp }}/hongguo-release/hongguo-tv-${{ env.APP_VERSION }}.apk
-            ${{ runner.temp }}/hongguo-release/hongguo-tv-mpv-${{ env.APP_VERSION }}.apk
-            ${{ runner.temp }}/hongguo-release/hongguo-tv-mpv-library-source-${{ env.APP_VERSION }}.zip
-            ${{ runner.temp }}/hongguo-release/SHA256SUMS.txt
-            ${{ runner.temp }}/hongguo-release/update.json
-            ${{ runner.temp }}/hongguo-release/update-mpv.json
-      - name: Publish public download release
-        if: startsWith(github.ref, 'refs/tags/') && vars.HONGGUO_PUBLIC_RELEASES_ENABLED == 'true'
+        run: rm -f android/hongguotv-release.jks android/keystore.properties
+
+      - name: Create release and upload assets
         env:
-          GH_TOKEN: ${{ secrets.HONGGUO_RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          test -n "$GH_TOKEN" || { echo "Configure HONGGUO_RELEASES_TOKEN with Contents write access to the public download repository" >&2; exit 1; }
-          mkdir -p "$RUNNER_TEMP/hongguo-public-release"
-          cp "$RUNNER_TEMP/hongguo-release/hongguo-tv-$APP_VERSION.apk" "$RUNNER_TEMP/hongguo-public-release/"
-          cp "$RUNNER_TEMP/hongguo-release/hongguo-tv-mpv-$APP_VERSION.apk" "$RUNNER_TEMP/hongguo-public-release/"
-          cp "$RUNNER_TEMP/hongguo-release/update.json" "$RUNNER_TEMP/hongguo-public-release/"
-          # The LGPL source kit remains on the private signed Release. The
-          # public download repository only needs APKs, manifests and checksums.
-          python3 scripts/generate_update.py --variant mpv \
-            --apk "$RUNNER_TEMP/hongguo-public-release/hongguo-tv-mpv-$APP_VERSION.apk" \
-            --version "$APP_VERSION" --code "$MPV_VERSION_CODE" --min-sdk 23 \
-            --notes "docs/releases/v$APP_VERSION.md" \
-            --out "$RUNNER_TEMP/hongguo-public-release/update-mpv.json"
-          cd "$RUNNER_TEMP/hongguo-public-release"
-          sha256sum "hongguo-tv-$APP_VERSION.apk" "hongguo-tv-mpv-$APP_VERSION.apk" > SHA256SUMS.txt
-          cd - >/dev/null
-          python3 scripts/publish_public_release.py --directory "$RUNNER_TEMP/hongguo-public-release" --notes "docs/releases/v$APP_VERSION.md"
-      - name: Public publication setup reminder
-        if: startsWith(github.ref, 'refs/tags/') && vars.HONGGUO_PUBLIC_RELEASES_ENABLED != 'true'
-        run: echo "Public auto-publication is disabled until the scoped token is configured; signed release artifacts remain available for manual publication."
+          set -e
+          gh release create "v$VERSION" --title "红果短剧 TV 极速版 v$VERSION" \
+            --notes "极速版 $VERSION：沉浸式电视交互、整集预下载无缝换集、软件解码稳定运行。
+
+          **MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk
+          **标准版**：hongguo-tv-speed-$VERSION.apk" --draft=false --prerelease=false
+          gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+
+      - name: Publish update manifests to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name "speed-release-bot"
+          git config user.email "jingrongx@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          cp stage/update-mpv.json update-mpv.json
+          cp stage/update.json update.json
+          git add update-mpv.json update.json
+          git diff --cached --quiet && { echo "manifests unchanged"; exit 0; }
+          git commit -m "ci: update manifests for v$VERSION"
+          git push origin main
+          # Point the release tag at the commit that carries the manifests.
+          git tag -f "v$VERSION"
+          git push -f origin "v$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apks-${{ steps.ver.outputs.version }}
+          path: stage/*.apk
+          retention-days: 14

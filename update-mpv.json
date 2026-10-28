@@ -6,7 +6,7 @@
   "package_name": "com.jingrongx.hongguotv.mpv",
   "size": 47870500,
   "sha256": "789c5e5f4af3903141d6064f15d58d8757caa813ceb824b212fcbe6d2210777b",
-  "download_url": "https://github.com/jingrongx/hongguo-tv/releases/download/v0.2.140/hongguo-tv-speed-mpv-0.2.140.apk",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.140/hongguo-tv-speed-mpv-0.2.140.apk",
   "release_notes": "极速版：沉浸交互、无缝换集、软件解码稳定、bytevc1 兼容",
   "variant": "mpv"
 }

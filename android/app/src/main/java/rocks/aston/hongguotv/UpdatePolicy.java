@@ -9,7 +9,7 @@ final class UpdatePolicy {
     // Self-owned update channel. Publish update.json / update-mpv.json and
     // signed APKs under GitHub Releases of this repository when a release is
     // wanted; until then the check simply reports no update.
-    static final String REPOSITORY = "jingrongx/hongguo-tv";
+    static final String REPOSITORY = "jingrongx/hongguo-tv-speed";
     static String manifestUrl(String variant) {
         return "https://raw.githubusercontent.com/" + REPOSITORY + "/main/" +
                 ("mpv".equals(variant) ? "update-mpv.json" : "update.json");
