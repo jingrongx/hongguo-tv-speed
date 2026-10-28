@@ -144,6 +144,15 @@ jobs:
           # ships arm64 and armv7 with the bridge compiled per ABI.
           cp ext-x86/lib/x86/*.so $OUT/x86_64/
 
+      - name: Restore mpv client header
+        run: |
+          set -e
+          mkdir -p android/mpv-jni/include/mpv
+          # The client API is stable; the header from the matching mpv
+          # generation works for the bridged calls this project uses.
+          curl -sL --retry 3 -o android/mpv-jni/include/mpv/client.h             https://raw.githubusercontent.com/mpv-player/mpv/v0.40.0/libmpv/client.h
+          grep -c "mpv_create" android/mpv-jni/include/mpv/client.h
+
       - name: Build MPV JNI bridge
         run: |
           set -e
