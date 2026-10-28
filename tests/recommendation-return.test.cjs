@@ -83,7 +83,9 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     feedPager.local(feedItems,feedItems.length);feedPager.params={channel:'16'};var allPagers=[feedPager,searchPager];
   ` + slice('resumeEpisode', 'clockText') + slice('changeLibrary', 'toggleSaved') +
     slice('recommendationChannel', 'showRecommendationPlaceholder') + slice('saveProgress', 'continueAfterEpisode') +
-    slice('recoverPlaybackPreparation', 'clearRangeTransitionHint') + slice('playFeedItem', 'posterSeasonLabel') + slice('loadCatalog', 'seriesMessage') +
+    slice('recoverPlaybackPreparation', 'clearRangeTransitionHint') +
+    `var autoEnterChain=0,landscapeAutoOnly=true;function softDecodeFlag(){return '';}` +
+    slice('playFeedItem', 'posterSeasonLabel') + slice('loadCatalog', 'seriesMessage') +
     source.slice(source.indexOf('  function activatePage('), source.indexOf("  document.addEventListener('keydown', handleKey")), c);
   return { c, calls, video, channel, state, async flush() { for (let i = 0; i < 6; i++) await tick(); }, entry(episode, position, extra = {}) {
     c.libraryData.entries = [{ drama: c.feedItems.find(x => x.series_id === 'r1') || { series_id: 'r1', episode_count: 3 }, episode, position, duration: 90, video_id: 'r1-' + episode, completed: false, last_played_at: Date.now(), ...extra }];

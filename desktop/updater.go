@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const desktopManifestURL = "https://raw.githubusercontent.com/aston314/hongguo-tv-releases/main/desktop-update-v2.json"
+const desktopManifestURL = "https://raw.githubusercontent.com/jingrongx/hongguo-tv-releases/main/desktop-update-v2.json"
 const desktopProxy = "https://gh-proxy.com/"
 var desktopProxies = []string{
 	"https://gh-proxy.com/",
@@ -28,7 +28,7 @@ var desktopProxies = []string{
 	"https://gh-proxy.org/",
 	"https://ghfast.top/",
 }
-const desktopPublicBase = "https://github.com/aston314/hongguo-tv-releases/releases/download/"
+const desktopPublicBase = "https://github.com/jingrongx/hongguo-tv-releases/releases/download/"
 
 // CI stamps a desktop-only channel. Android version codes and APK channels are unrelated.
 var desktopVersion = "0.2.67"

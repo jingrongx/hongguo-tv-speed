@@ -1,4 +1,4 @@
-module github.com/aston314/hongguo-tv/desktop
+module github.com/jingrongx/hongguo-tv/desktop
 
 go 1.25
 

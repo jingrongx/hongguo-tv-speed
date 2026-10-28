@@ -382,10 +382,22 @@ func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var result PlayInfo
-	if r.URL.Query().Get("mode") == "range" {
-		result, err = s.hongguo.PlayInfoRangeQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1", r.URL.Query().Get("prefetch") != "1")
+	// The software decoder (mpv/ffmpeg) cannot demux the bytevc1 container
+	// tag, so a software-decoding engine asks for H.264/H.265 tiers only;
+	// hardware MediaCodec plays those same tiers fine and keeps bytevc1.
+	playbackCtx := r.Context()
+	if r.URL.Query().Get("sw") == "1" {
+		playbackCtx = withSoftDecode(playbackCtx)
+	}
+	// full=1 asks for the whole-file preparation: the speculative prefetch
+	// downloads the entire next episode to the disk cache while the current
+	// one plays, so the switch itself needs no network at all.
+	if r.URL.Query().Get("full") == "1" {
+		result, err = s.hongguo.PlayInfoQuality(playbackCtx, r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
+	} else if r.URL.Query().Get("mode") == "range" {
+		result, err = s.hongguo.PlayInfoRangeQuality(playbackCtx, r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1", r.URL.Query().Get("prefetch") != "1")
 	} else {
-		result, err = s.hongguo.PlayInfoQuality(r.Context(), r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
+		result, err = s.hongguo.PlayInfoQuality(playbackCtx, r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())

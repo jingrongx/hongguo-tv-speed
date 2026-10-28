@@ -7,7 +7,6 @@
   <script src="/compat.js"></script>
   <script src="/locales/zh-CN.js"></script>
   <script src="/locales/zh-TW.js"></script>
-  <script src="/locales/ja-JP.js"></script>
   <script src="/i18n.js"></script>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/compat.css">
@@ -306,7 +305,7 @@
         <div class="settings-card app-update-card" id="language-settings">
           <h2 data-i18n="settings.language">界面语言</h2>
           <p data-i18n="settings.languageDescription">选择应用界面语言。切换后会重新加载界面。</p>
-          <div class="app-update-actions"><button class="locale-action account-action" id="locale-zh-CN" data-locale="zh-CN" data-focus="locale-zh-CN" aria-pressed="false" data-i18n="settings.languageChineseSimplified">简体中文</button><button class="locale-action account-action" id="locale-zh-TW" data-locale="zh-TW" data-focus="locale-zh-TW" aria-pressed="false" data-i18n="settings.languageChineseTraditional">繁體中文</button><button class="locale-action account-action" id="locale-ja-JP" data-locale="ja-JP" data-focus="locale-ja-JP" aria-pressed="false" data-i18n="settings.languageJapanese">日本語</button></div>
+          <div class="app-update-actions"><button class="locale-action account-action" id="locale-zh-CN" data-locale="zh-CN" data-focus="locale-zh-CN" aria-pressed="false" data-i18n="settings.languageChineseSimplified">简体中文</button><button class="locale-action account-action" id="locale-zh-TW" data-locale="zh-TW" data-focus="locale-zh-TW" aria-pressed="false" data-i18n="settings.languageChineseTraditional">繁體中文</button></div>
           <p id="language-state" role="status" aria-live="polite"></p>
         </div>
         <div class="settings-card app-update-card is-hidden" id="auto-cinema-settings">
@@ -314,6 +313,18 @@
           <p data-i18n="settings.autoCinemaDescription">从卡片进入单剧播放后隐藏左侧菜单。播放控件和自动清屏沿用现有逻辑，推荐页不受影响。</p>
           <div class="app-update-actions"><button class="auto-cinema-action account-action" id="auto-cinema-toggle" data-focus="auto-cinema-toggle" aria-pressed="true" data-i18n="settings.autoCinemaEnabled">已开启</button></div>
           <p id="auto-cinema-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="settings-card app-update-card" id="landscape-settings">
+          <h2 data-i18n="settings.landscapeOnly">仅自动播放横屏剧</h2>
+          <p data-i18n="settings.landscapeOnlyDescription">自动连播和自动换剧时跳过竖屏剧，更适合电视屏幕；手动点开的剧不受影响。横竖屏标记来自播放解析，会随着观看逐步积累。</p>
+          <div class="app-update-actions"><button class="landscape-action account-action" id="landscape-toggle" data-focus="landscape-toggle" aria-pressed="true" data-i18n="settings.autoCinemaEnabled">已开启</button></div>
+          <p id="landscape-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="settings-card app-update-card" id="sidebar-mode-settings">
+          <h2 data-i18n="settings.sidebarMode">侧边栏</h2>
+          <p data-i18n="settings.sidebarModeDescription">默认沉浸全屏播放：按遥控器菜单键或 OK 键呼出半透明侧边栏，闲置或返回时自动收起。开启常驻后侧边栏始终显示。</p>
+          <div class="app-update-actions"><button class="sidebar-mode-action account-action" id="sidebar-mode-toggle" data-focus="sidebar-mode-toggle" aria-pressed="false" data-i18n="settings.sidebarPermanentDisabled">自动隐藏</button></div>
+          <p id="sidebar-mode-state" role="status" aria-live="polite"></p>
         </div>
         <div class="settings-card app-update-card is-hidden" id="webos-audio-settings">
           <h2 data-i18n="settings.audibleSpeed">有声倍速（实验）</h2>

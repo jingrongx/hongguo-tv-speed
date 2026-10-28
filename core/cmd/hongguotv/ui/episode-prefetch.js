@@ -4,7 +4,8 @@
   function create(options) {
     var entry = null;
     var now = options.now || Date.now;
-    var maxRetries = options.maxRetries === 1 ? 1 : 0;
+    // Honor any configured retry budget (0 keeps the old no-retry behavior).
+    var maxRetries = Math.max(0, Number(options.maxRetries) || 0);
     var retryDelay = Math.max(0, Number(options.retryDelayMs) || 3000);
     var maxAge = Math.max(0, Number(options.maxAgeMs) || 0);
     var isRetryableError = options.isRetryableError || retryableError;

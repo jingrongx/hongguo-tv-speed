@@ -6,7 +6,10 @@ import java.util.Locale;
 
 /** Rules shared by checking, downloading and the final installer hand-off. */
 final class UpdatePolicy {
-    static final String REPOSITORY = "aston314/hongguo-tv-releases";
+    // Self-owned update channel. Publish update.json / update-mpv.json and
+    // signed APKs under GitHub Releases of this repository when a release is
+    // wanted; until then the check simply reports no update.
+    static final String REPOSITORY = "jingrongx/hongguo-tv";
     static String manifestUrl(String variant) {
         return "https://raw.githubusercontent.com/" + REPOSITORY + "/main/" +
                 ("mpv".equals(variant) ? "update-mpv.json" : "update.json");
@@ -14,7 +17,7 @@ final class UpdatePolicy {
     static void validateVariant(String variant, String declared, String packageName, int minSdk) {
         if (!("standard".equals(variant) || "mpv".equals(variant))
                 || !(variant.equals(declared) || "standard".equals(variant) && declared.isEmpty())
-                || !("rocks.aston.hongguotv" + ("mpv".equals(variant) ? ".mpv" : "")).equals(packageName)
+                || !("com.jingrongx.hongguotv" + ("mpv".equals(variant) ? ".mpv" : "")).equals(packageName)
                 || minSdk < 23)
             throw new IllegalArgumentException("更新包与当前应用版本类型不匹配");
     }

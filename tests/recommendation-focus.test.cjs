@@ -46,9 +46,9 @@ test('ongoing playing events cannot start automatic clear-screen while the chann
   const f = fixture(); for (let i = 0; i < 4; i++) f.c.scheduleControlsHide();
   assert.equal(f.state.timers.length, 0);
 });
-test('entering the video resumes the existing four-second clear-screen timer', () => {
+test('entering the video resumes the existing six-second clear-screen timer', () => {
   const f = fixture('recommend', 'feed'); f.c.scheduleControlsHide();
-  assert.equal(f.state.timers.length, 1); assert.equal(f.state.timers[0].delay, 4000);
+  assert.equal(f.state.timers.length, 1); assert.equal(f.state.timers[0].delay, 6000);
   f.state.timers[0].callback(); assert.equal(f.state.hidden, true);
 });
 test('sidebar, paused video and open panels retain their existing protection against automatic clear-screen', () => {

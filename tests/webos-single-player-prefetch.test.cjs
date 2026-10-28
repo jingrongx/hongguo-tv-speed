@@ -16,7 +16,7 @@ function fixture(options = {}) {
     HongguoEpisodePrefetch: prefetch, webosShell: true,
     window: { HongguoWebOS: {} }, applicationInBackground: false, qualityPrevious: null, accountEpoch: 1, feedGeneration: 1,
     activePlayback: playback,
-    playbackPreferences: { quality: '' }, playbackEngineName: () => 'webos-html5', rangePlaybackEnabled: () => true,
+    playbackPreferences: { quality: '' }, playbackEngineName: () => 'webos-html5', rangePlaybackEnabled: () => true, softDecodeFlag: () => '',
     getDetail: async () => detail, isPlaybackPage: () => true, applicationHidden: () => false,
     document: { createElement() { throw Error('webOS must never create a speculative video'); } },
     fetchData: async (url, options) => { calls.push({ url, signal: options.signal }); return { path: '/minireel-proxy/media/' + new URLSearchParams(url.split('?')[1]).get('vid') + '.mp4', mode: 'range' }; }
@@ -41,7 +41,10 @@ test('webOS consumes prefetch results over four consecutive episode handoffs wit
     f.c.feedGeneration++;
     f.c.activePlayback = { ...old, episode: episode + 1, vid: String((episode + 1) * 111), generation: f.c.feedGeneration, stableSince: Date.now() - 6000 };
   }
-  assert.equal(f.calls.length, 4, 'exactly one prepared request per next episode');
+  const rangeCalls = f.calls.filter(call => new URLSearchParams(call.url.split('?')[1]).get('full') !== '1');
+  const fullCalls = f.calls.filter(call => new URLSearchParams(call.url.split('?')[1]).get('full') === '1');
+  assert.equal(rangeCalls.length, 4, 'exactly one range preparation per next episode');
+  assert.equal(fullCalls.length, 4, 'exactly one full-file prefetch per next episode');
   assert(f.calls.every(call => new URLSearchParams(call.url.split('?')[1]).get('prefetch') === '1'));
 });
 
@@ -54,7 +57,7 @@ test('aggregate access count does not suppress prefetch for the immediate fourth
     playback: { item: { series_id: '123' }, episode: 3, vid: '333', generation: 1, started: true, stableSince: Date.now() - 6000 }
   });
   f.c.maybePrefetchNextEpisode(f.video); await tick();
-  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls.length, 2);
   const query = new URLSearchParams(f.calls[0].url.split('?')[1]);
   assert.equal(query.get('vid'), '444');
   assert.equal(query.get('prefetch'), '1');

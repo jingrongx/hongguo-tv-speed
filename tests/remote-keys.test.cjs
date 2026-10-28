@@ -213,31 +213,27 @@ test('playback control focus keeps its existing vertical focus routing', () => {
   assert.deepEqual(Array.from(c.focused),['control-up']);
   assert.deepEqual(Array.from(c.played),[]);
 });
-test('single-player feed seeks horizontally only in cinema or hidden-controls mode', () => {
+test('single-player feed steps episodes on left/right; immersive recommendation too', () => {
   const c=keyboard();
   vm.runInContext(`
     pageMode=function(){return 'player'};
     zoneOf=function(){return 'feed'};
     isPlaybackPage=function(){return true};
-    seekBy=function(delta,reveal){played.push(['seek',delta,reveal])};
+    switchPlayerEpisode=function(step,fromWheel){played.push(['episode',step])};
     shellState['is-controls-hidden']=true;
   `,c);
   c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
-  c.handleKey({keyCode:39,repeat:true,preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['seek',-10,false],['seek',10,false]]);
+  c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['episode',-1],['episode',1]]);
   assert.deepEqual(Array.from(c.focused),[]);
 
-  vm.runInContext(`shellState['is-controls-hidden']=false; shellState['is-cinema']=false; played=[]; moveFrom=function(current,direction){return {id:'route-'+direction}}`,c);
+  vm.runInContext(`shellState['is-controls-hidden']=false; shellState['is-cinema']=false; played=[]`,c);
   c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
   c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[]);
-  assert.deepEqual(Array.from(c.focused),['route-left','route-right']);
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['episode',-1],['episode',1]]);
+  assert.deepEqual(Array.from(c.focused),[]);
 
-  vm.runInContext(`shellState['is-cinema']=true; focused=[]`,c);
-  c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['seek',10,false]]);
-
-  vm.runInContext(`pageMode=function(){return 'recommend'}; shellState['is-cinema']=true; played=[]`,c);
+  vm.runInContext(`pageMode=function(){return 'recommend'}; played=[]; immersiveMode=function(){return true}; sidebarMenuOpen=false; detailModalOpen=false; playerOptionsOpen=false; confirmOpen=false; discussionOpen=false`,c);
   c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['seek',-10,false]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['episode',-1]]);
 });

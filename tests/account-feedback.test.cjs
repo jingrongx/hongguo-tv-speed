@@ -25,7 +25,7 @@ function runtime(locale, countryCode = '+86') {
     acceptAccountStatus(data) { context.accountData = data; context.renderAccount(); }
   });
   context.window = context;
-  for (const file of ['locales/zh-CN.js', 'locales/zh-TW.js', 'locales/ja-JP.js', 'i18n.js']) {
+  for (const file of ['locales/zh-CN.js', 'locales/zh-TW.js', 'i18n.js']) {
     vm.runInContext(fs.readFileSync(require.resolve(ui + file), 'utf8'), context);
   }
   context.HongguoI18n.setLocale(locale);
@@ -35,7 +35,7 @@ function runtime(locale, countryCode = '+86') {
   return { context, nodes };
 }
 
-for (const locale of ['zh-CN', 'zh-TW', 'ja-JP']) {
+for (const locale of ['zh-CN', 'zh-TW']) {
   test(locale + ': failed SMS keeps both the exact reason and App-code guidance, including after polling', async () => {
     const { context, nodes } = runtime(locale);
     const reason = '测试发码请求被拒绝（1003）';
@@ -74,7 +74,7 @@ test('changing locale immediately retranslates both messages without discarding 
   const reason = '测试发码请求被拒绝（1003）';
   context.accountData = { phase: 'phone', error: reason, app_code_available: true };
   context.setAccountMessage(reason, true);
-  for (const locale of ['zh-TW', 'ja-JP', 'zh-CN']) {
+  for (const locale of ['zh-TW', 'zh-CN']) {
     context.HongguoI18n.setLocale(locale);
     assert.equal(nodes['account-message'].textContent, context.HongguoI18n.t('ui.accountErrorDetail', { detail: reason }));
     assert.equal(nodes['account-app-code-title'].textContent, context.HongguoI18n.t('ui.appCodeFallbackTitle'));
@@ -84,7 +84,7 @@ test('changing locale immediately retranslates both messages without discarding 
 });
 
 test('status updates render text safely and keep normal notices separate from fallback instructions', () => {
-  const { context, nodes } = runtime('ja-JP');
+  const { context, nodes } = runtime('zh-TW');
   context.renderAccountMessages({ phase: 'phone', error: '<img src=x>（1003）' }, true);
   assert.ok(nodes['account-message'].textContent.includes('<img src=x>（1003）'));
   context.accountNotice = 'notice';

@@ -60,6 +60,8 @@ type miniReelOption struct {
 	URL      string
 	Key      []byte
 	Height   int
+	Width    int
+	Codec    string
 	Quality  string
 	Duration int
 }
@@ -80,6 +82,8 @@ type miniReelMediaJob struct {
 	DownloadMS  int64
 	DecryptMS   int64
 	RangeInitMS int64
+	VideoWidth  int
+	VideoHeight int
 }
 
 var miniReelState = struct {
@@ -99,6 +103,31 @@ var miniReelSeasonIdentity = struct {
 }{}
 
 var errMiniReelVideoModelEmpty = errors.New("MiniReel video_model response is empty")
+
+// A software-decoding engine (mpv/ffmpeg) cannot demux the bytevc1/bytevc2
+// container tags; hardware MediaCodec handles the same streams. Requests
+// tagged through withSoftDecode therefore drop those tiers before selection.
+type softDecodeCtxKey struct{}
+
+func withSoftDecode(ctx context.Context) context.Context {
+	return context.WithValue(ctx, softDecodeCtxKey{}, true)
+}
+
+func softDecodeRequested(ctx context.Context) bool {
+	value, _ := ctx.Value(softDecodeCtxKey{}).(bool)
+	return value
+}
+
+func dropSoftwareUndecodable(options []miniReelOption) []miniReelOption {
+	kept := make([]miniReelOption, 0, len(options))
+	for _, option := range options {
+		if strings.EqualFold(option.Codec, "bytevc1") || strings.EqualFold(option.Codec, "bytevc2") {
+			continue
+		}
+		kept = append(kept, option)
+	}
+	return kept
+}
 
 type miniReelDevice struct {
 	deviceID  string
@@ -247,7 +276,13 @@ func resolveMiniReelMediaQuality(ctx context.Context, seriesID, vid, quality str
 // one request only cancels networking when no other consumer needs the job.
 func resolveMiniReelMediaWith(ctx context.Context, seriesID, vid, quality string, fallback bool,
 	prepare func(context.Context, *miniReelMediaJob, string, string, string, string, bool)) (map[string]any, error) {
-	token := miniReelQualityToken(seriesID, vid, quality, fallback)
+	// Software-decoded selections pick different tiers, so they must not share
+	// a cache entry with hardware-decoded ones.
+	cacheVid := vid
+	if softDecodeRequested(ctx) {
+		cacheVid += " sw=1"
+	}
+	token := miniReelQualityToken(seriesID, cacheVid, quality, fallback)
 	return resolveMiniReelMediaWithToken(ctx, token, seriesID, vid, quality, fallback, prepare)
 }
 
@@ -336,11 +371,13 @@ acquire:
 		return nil, job.Err
 	}
 	return map[string]any{
-		"path":      "/minireel-proxy/media/" + token + ".mp4",
-		"quality":   job.Quality,
-		"qualities": job.Qualities,
-		"vid":       vid,
-		"mode":      firstNonEmpty(job.Mode, "full"),
+		"path":         "/minireel-proxy/media/" + token + ".mp4",
+		"quality":      job.Quality,
+		"qualities":    job.Qualities,
+		"vid":          vid,
+		"mode":         firstNonEmpty(job.Mode, "full"),
+		"video_width":  job.VideoWidth,
+		"video_height": job.VideoHeight,
 	}, nil
 }
 
@@ -353,6 +390,9 @@ func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, ser
 	}()
 	resolveStarted := time.Now()
 	options, err := miniReelNativeOptions(ctx, vid)
+	if softDecodeRequested(ctx) {
+		options = dropSoftwareUndecodable(options)
+	}
 	job.ResolveMS = time.Since(resolveStarted).Milliseconds()
 	if err != nil {
 		job.Err = err
@@ -370,6 +410,8 @@ func prepareMiniReelMedia(ctx context.Context, job *miniReelMediaJob, token, ser
 	job.Quality = option.Quality
 	job.Qualities = miniReelQualities(options)
 	job.Mode = "full"
+	job.VideoWidth = option.Width
+	job.VideoHeight = option.Height
 	if err := ensureMiniReelRoot(); err != nil {
 		job.Err = err
 		return
@@ -868,16 +910,26 @@ func miniReelNativeOptionsAttemptWithClient(ctx context.Context, vid, endpoint s
 		if height == 0 {
 			height = miniReelIntFromAny(meta["height"])
 		}
-		definition := firstNonEmpty(miniReelToString(row["quality_desc"]), miniReelToString(row["definition"]), miniReelToString(meta["definition"]))
-		if match := miniReelDefinitionRE.FindStringSubmatch(definition); len(match) > 1 {
-			height, _ = strconv.Atoi(match[1])
-		}
-		quality := ""
-		if height > 0 {
-			quality = strconv.Itoa(height) + "P"
-		}
-		options = append(options, miniReelOption{URL: mediaURL, Key: key, Height: height, Quality: quality, Duration: miniReelIntFromAny(optionModel["video_duration"])})
+	definition := firstNonEmpty(miniReelToString(row["quality_desc"]), miniReelToString(row["definition"]), miniReelToString(meta["definition"]))
+	if match := miniReelDefinitionRE.FindStringSubmatch(definition); len(match) > 1 {
+		height, _ = strconv.Atoi(match[1])
 	}
+	quality := ""
+	if height > 0 {
+		quality = strconv.Itoa(height) + "P"
+	}
+	width := miniReelIntFromAny(meta["vwidth"])
+	if width == 0 {
+		width = miniReelIntFromAny(meta["width"])
+	}
+	if width == 0 {
+		width = miniReelIntFromAny(row["vwidth"])
+	}
+	options = append(options, miniReelOption{URL: mediaURL, Key: key, Height: height, Quality: quality, Duration: miniReelIntFromAny(optionModel["video_duration"]), Width: width, Codec: codec})
+	}
+	// A response whose every tier is bytevc* yields no options here on
+	// purpose: the caller reports "no compatible video source" instead of
+	// feeding an undecodable stream into a decoder that must fail.
 	return options, nil
 }
 

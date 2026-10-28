@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 aston
 #include <jni.h>
+#include <android/native_window_jni.h>
 #include <cstdint>
 #include <string>
 #include <vector>
 #include <mpv/client.h>
 
-extern "C" int mpv_lavc_set_java_vm(void *vm);
+// ffmpeg's standard Android JNI hook (exported by libavcodec.so). The
+// media-kit builds used to expose their own mpv_lavc_set_java_vm wrapper;
+// the current mpv-android based libraries ship plain ffmpeg.
+extern "C" int av_jni_set_java_vm(void *vm, void *log_ctx);
 namespace {
 JavaVM *vm = nullptr;
+// wid carries the Surface jobject itself: libmpv's Android output resolves
+// it through the registered JavaVM (ANativeWindow_fromSurface internally).
 struct Client { mpv_handle *mpv; jobject surface = nullptr; };
 Client *client(jlong pointer) { return reinterpret_cast<Client *>(static_cast<intptr_t>(pointer)); }
 void error(JNIEnv *env, const char *message) {
@@ -22,13 +28,22 @@ std::string string(JNIEnv *env, jstring value) {
     if (!chars) return {};
     std::string result(chars); env->ReleaseStringUTFChars(value, chars); return result;
 }
+void attachWindow(JNIEnv *env, Client *c, jobject surface) {
+    jobject next = surface ? env->NewGlobalRef(surface) : nullptr;
+    if (surface && !next) return;
+    int64_t wid = static_cast<int64_t>(reinterpret_cast<intptr_t>(next));
+    int status = mpv_set_option(c->mpv, "wid", MPV_FORMAT_INT64, &wid);
+    if (status < 0) { if (next) env->DeleteGlobalRef(next); check(env, status); return; }
+    if (c->surface) env->DeleteGlobalRef(c->surface);
+    c->surface = next;
+}
 }
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *runtime, void *) {
     vm = runtime; return JNI_VERSION_1_6;
 }
 #define JNI_METHOD(name) Java_rocks_aston_hongguotv_MPVLib_##name
 extern "C" JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreate)(JNIEnv *env, jclass) {
-    if (!vm || mpv_lavc_set_java_vm(vm) < 0) { error(env, "Cannot register Java VM"); return 0; }
+    if (!vm || av_jni_set_java_vm(vm, nullptr) < 0) { error(env, "Cannot register Java VM"); return 0; }
     mpv_handle *handle = mpv_create();
     if (!handle) { error(env, "Cannot create MPV"); return 0; }
     int status = mpv_request_log_messages(handle, "warn");
@@ -129,12 +144,5 @@ extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeCommandAsync)(JNIEnv *env, jc
     check(env, mpv_command_async(client(p)->mpv, static_cast<uint64_t>(requestId), argv.data()));
 }
 extern "C" JNIEXPORT void JNICALL JNI_METHOD(nativeSurface)(JNIEnv *env, jclass, jlong p, jobject surface) {
-    Client *c = client(p);
-    jobject next = surface ? env->NewGlobalRef(surface) : nullptr;
-    if (surface && !next) return;
-    int64_t wid = static_cast<int64_t>(reinterpret_cast<intptr_t>(next));
-    int status = mpv_set_option(c->mpv, "wid", MPV_FORMAT_INT64, &wid);
-    if (status < 0) { if (next) env->DeleteGlobalRef(next); check(env, status); return; }
-    if (c->surface) env->DeleteGlobalRef(c->surface);
-    c->surface = next;
+    attachWindow(env, client(p), surface);
 }

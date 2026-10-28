@@ -33,17 +33,29 @@ var miniReelRangeRetryDelays = [...]time.Duration{300 * time.Millisecond, 700 * 
 // A range source retains only the MP4 initialization section and its sample
 // index. Media bytes stay upstream until the browser asks for them.
 type miniReelRangeSource struct {
-	URL     string
-	ETag    string
-	Length  int64
-	Prefix  []byte
-	Samples []mp4Sample
-	Key     []byte
-	VID     string
-	Quality string
+	URL         string
+	ETag        string
+	Length      int64
+	Prefix      []byte
+	Samples     []mp4Sample
+	Key         []byte
+	VID         string
+	Quality     string
+	VideoWidth  int
+	VideoHeight int
 
 	mu        sync.RWMutex
 	refreshMu sync.Mutex
+
+	// Single-slot read-ahead: the chunk following the last served range is
+	// fetched in the background so the next media request is answered from
+	// memory instead of waiting on a fresh upstream round trip. One slot
+	// matches the strictly sequential access pattern of video playback.
+	aheadMu     sync.Mutex
+	aheadStart  int64
+	aheadData   []byte
+	aheadFilled bool
+	aheadPending bool
 }
 
 func resolveMiniReelMediaRangeQuality(ctx context.Context, seriesID, vid, quality string, fallback, allowStandardFallback bool) (map[string]any, error) {
@@ -74,6 +86,9 @@ func resolveMiniReelMediaRangeQuality(ctx context.Context, seriesID, vid, qualit
 func prepareMiniReelRangeMedia(ctx context.Context, job *miniReelMediaJob, token, seriesID, vid, quality string, fallback bool) {
 	resolveStarted := time.Now()
 	options, err := miniReelNativeOptions(ctx, vid)
+	if softDecodeRequested(ctx) {
+		options = dropSoftwareUndecodable(options)
+	}
 	job.ResolveMS = time.Since(resolveStarted).Milliseconds()
 	if err != nil {
 		job.Err = err
@@ -99,6 +114,14 @@ func prepareMiniReelRangeMedia(ctx context.Context, job *miniReelMediaJob, token
 	job.Quality = option.Quality
 	job.Qualities = miniReelQualities(options)
 	job.Mode = "range"
+	job.VideoWidth = firstPositive(option.Width, source.VideoWidth)
+	job.VideoHeight = firstPositive(option.Height, source.VideoHeight)
+	// The prepared source only holds the MP4 index; the first media chunk is
+	// still upstream. Warming the read-ahead slot now (connection setup, CDN
+	// edge, DNS) removes that latency from the episode switch itself, and the
+	// warmed bytes are served from memory. Best effort with its own timeout:
+	// the job context is canceled as soon as preparation returns.
+	go source.fillAhead(0, min(miniReelRangeChunkBytes-1, source.Length-1))
 	_ = token
 	_ = seriesID
 }
@@ -151,7 +174,42 @@ func openMiniReelRangeSource(ctx context.Context, option miniReelOption, vid str
 	}
 	source := &miniReelRangeSource{URL: option.URL, ETag: etag, Length: length, Prefix: prefix,
 		Samples: samples, Key: append([]byte(nil), option.Key...), VID: vid, Quality: option.Quality}
+	source.VideoWidth, source.VideoHeight = mp4VideoTrackSize(prefix)
 	return source, nil
+}
+
+// mp4VideoTrackSize reads the display width and height of the first video
+// track from the parsed moov section. The track header stores both values as
+// 16.16 fixed-point numbers in its final eight bytes (layout is identical for
+// version 0 and 1), and audio tracks carry zeros there.
+func mp4VideoTrackSize(prefix []byte) (int, int) {
+	root, err := parseMP4Boxes(prefix, 0, len(prefix))
+	if err != nil {
+		return 0, 0
+	}
+	moov, ok := firstMP4Box(root, "moov")
+	if !ok {
+		return 0, 0
+	}
+	children, err := parseMP4Boxes(prefix, moov.Payload, moov.End)
+	if err != nil {
+		return 0, 0
+	}
+	for _, trak := range children {
+		if trak.Type != "trak" {
+			continue
+		}
+		tkhd, ok := findMP4Child(prefix, trak, "tkhd")
+		if !ok || tkhd.End-tkhd.Payload < 84 || tkhd.End > len(prefix) {
+			continue
+		}
+		width := int(binaryBigEndianUint32(prefix[tkhd.End-8 : tkhd.End-4]) >> 16)
+		height := int(binaryBigEndianUint32(prefix[tkhd.End-4 : tkhd.End]) >> 16)
+		if width > 0 && height > 0 {
+			return width, height
+		}
+	}
+	return 0, 0
 }
 
 func fetchMiniReelInitialPrefix(ctx context.Context, target, etag string, length, end int64) ([]byte, error) {
@@ -315,6 +373,9 @@ func miniReelRangeMemorySize(source *miniReelRangeSource) int64 {
 	for _, sample := range source.Samples {
 		size += 64 + int64(len(sample.IV))
 	}
+	source.aheadMu.Lock()
+	size += int64(len(source.aheadData))
+	source.aheadMu.Unlock()
 	return size
 }
 
@@ -606,9 +667,15 @@ func parseMiniReelByteRange(value string, length int64) (int64, int64, bool, err
 }
 
 func (source *miniReelRangeSource) readAndTransform(ctx context.Context, start, end int64) ([]byte, error) {
-	data, err := source.fetch(ctx, start, end)
-	if err != nil {
-		return nil, err
+	var data []byte
+	if cached, ok := source.takeAhead(start, end); ok {
+		data = cached
+	} else {
+		var err error
+		data, err = source.fetch(ctx, start, end)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if prefixEnd := int64(len(source.Prefix)) - 1; prefixEnd >= start {
 		copyEnd := end
@@ -618,6 +685,7 @@ func (source *miniReelRangeSource) readAndTransform(ctx context.Context, start, 
 		copy(data[:copyEnd-start+1], source.Prefix[start:copyEnd+1])
 	}
 	if len(source.Samples) == 0 {
+		source.scheduleAhead(end)
 		return data, nil
 	}
 	block, err := aes.NewCipher(source.Key)
@@ -648,7 +716,56 @@ func (source *miniReelRangeSource) readAndTransform(ctx context.Context, start, 
 			return nil, err
 		}
 	}
+	source.scheduleAhead(end)
 	return data, nil
+}
+
+// takeAhead hands out the prefetched chunk when it exactly covers the request.
+// The returned slice detaches the slot, so the caller's in-place decryption
+// cannot corrupt a stale buffer.
+func (source *miniReelRangeSource) takeAhead(start, end int64) ([]byte, bool) {
+	source.aheadMu.Lock()
+	defer source.aheadMu.Unlock()
+	if !source.aheadFilled || source.aheadStart != start || int64(len(source.aheadData)) < end-start+1 {
+		return nil, false
+	}
+	data := source.aheadData[:end-start+1]
+	source.aheadStart, source.aheadData, source.aheadFilled = 0, nil, false
+	return data, true
+}
+
+// fillAhead fetches one chunk into the single slot. A concurrent fill skips;
+// a failed fill keeps the previous slot untouched.
+func (source *miniReelRangeSource) fillAhead(start, end int64) {
+	source.aheadMu.Lock()
+	if source.aheadPending {
+		source.aheadMu.Unlock()
+		return
+	}
+	source.aheadPending = true
+	source.aheadMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	data, err := source.fetch(ctx, start, end)
+	source.aheadMu.Lock()
+	source.aheadPending = false
+	if err == nil {
+		source.aheadStart, source.aheadData, source.aheadFilled = start, data, true
+	}
+	source.aheadMu.Unlock()
+}
+
+// scheduleAhead queues the chunk after the served range in the background.
+func (source *miniReelRangeSource) scheduleAhead(served int64) {
+	next := served + 1
+	if next > source.Length-1 {
+		return
+	}
+	last := next + miniReelRangeChunkBytes - 1
+	if last > source.Length-1 {
+		last = source.Length - 1
+	}
+	go source.fillAhead(next, last)
 }
 
 func decryptMiniReelCTRFragment(data, iv []byte, block cipher.Block, offset int64) error {

@@ -44,6 +44,7 @@ test('Back exits sidebar-free playback, reveals controls and focuses the active 
     const state = { cinema: true, hidden: initiallyHidden, focused: null };
     const c = vm.createContext({
       coreConnectionModalOpen: false,
+      sidebarMenuOpen: false,
       autoCinemaCandidate: false,
       endRecommendations: { close: () => false },
       searchSuggestionOpen: false,

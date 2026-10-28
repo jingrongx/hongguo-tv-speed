@@ -153,7 +153,7 @@
       button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     var state = document.getElementById('language-state');
-    if (state) state.textContent = uiText('settings.currentLanguage', '当前：{language}', { language: current === 'zh-TW' ? uiText('settings.languageChineseTraditional', '繁體中文') : current === 'ja-JP' ? uiText('settings.languageJapanese', '日本語') : uiText('settings.languageChineseSimplified', '简体中文') });
+    if (state) state.textContent = uiText('settings.currentLanguage', '当前：{language}', { language: current === 'zh-TW' ? uiText('settings.languageChineseTraditional', '繁體中文') : uiText('settings.languageChineseSimplified', '简体中文') });
   }
   var androidShell = /HongguoTV-Android/.test(navigator.userAgent);
   var webosShell = !!window.HongguoWebOS;
@@ -397,9 +397,13 @@
   // Bounded, memory-only diagnostics. No drama IDs, titles or account data.
   window.HongguoTVPlaybackTiming = { snapshot: function () { return playbackTiming.map(function (item) { return Object.assign({}, item); }); } };
   var episodePrefetch = HongguoEpisodePrefetch.create({
-    maxRetries: window.HongguoWebOS ? 1 : 0,
+    // A failed speculative request gets two more tries; without them a single
+    // hiccup forced the next episode switch into a full foreground resolve,
+    // which is the multi-second stall. The near-end refresh below also runs on
+    // every engine now: an old prepared source can outlive its upstream URL.
+    maxRetries: 2,
     retryDelayMs: 3000,
-    maxAgeMs: window.HongguoWebOS ? 120000 : 0,
+    maxAgeMs: 120000,
     lookup: function (info, signal) {
       return getDetail(info.item, signal).then(function (detail) {
         if (!detail || detail.series_id !== info.series_id) return null;
@@ -409,7 +413,22 @@
       });
     },
     prepare: function (target, signal) {
-      return fetchData('/api/v1/play/info?' + new URLSearchParams(Object.assign({}, target, { prefetch: '1' })), signal ? { signal: signal } : {});
+      // Two-stage speculative preparation. The range request resolves fast
+      // (index + warmed first chunk) and stays the instant fallback; the full
+      // request downloads the whole episode into the disk cache in the
+      // background so the actual switch plays from local storage with no
+      // network wait at all. Whichever is ready wins at handoff time.
+      var rangePromise = fetchData('/api/v1/play/info?' + new URLSearchParams(Object.assign({}, target, { prefetch: '1', sw: softDecodeFlag() })), signal ? { signal: signal } : {});
+      var fullSettled = false;
+      var fullPromise = fetchData('/api/v1/play/info?' + new URLSearchParams(Object.assign({}, target, { prefetch: '1', full: '1', sw: softDecodeFlag() })), signal ? { signal: signal } : {})
+        .then(function (data) { fullSettled = true; return data && data.path && data.mode === 'full' ? data : null; },
+              function () { fullSettled = true; return null; });
+      return rangePromise.then(function (data) {
+        return Object.assign({}, data, {
+          fullReady: fullPromise,
+          fullSettled: function () { return fullSettled; }
+        });
+      });
     }
   });
   var applicationInBackground = false;
@@ -448,7 +467,7 @@
     37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
     13: 'Enter', 27: 'Escape', 8: 'Backspace', 9: 'Tab', 46: 'Delete', 32: ' ',
     19: 'ArrowUp', 20: 'ArrowDown', 21: 'ArrowLeft', 22: 'ArrowRight',
-    23: 'Enter', 66: 'Enter', 160: 'Enter', 4: 'Escape', 111: 'Escape'
+    23: 'Enter', 66: 'Enter', 160: 'Enter', 4: 'Escape', 111: 'Escape', 82: 'Menu'
   };
 
   function playMedia(video) {
@@ -1454,7 +1473,17 @@
     }
     if (zone === 'sidebar') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
-      if (direction === 'right') return firstContentFocus();
+      if (direction === 'right') {
+        // While a video actually plays on the recommendation page, the
+        // channel banner is a dead end for remote users: the complaint was
+        // right-key then two downs just to switch drama. Land on the video
+        // card directly, where "down" already switches to the next drama.
+        if (pageMode() === 'recommend' && playbackCommandMenuAvailable()) {
+          var playingVideoCard = document.querySelector('.hero-feed-focus');
+          if (playingVideoCard) return playingVideoCard;
+        }
+        return firstContentFocus();
+      }
       return null;
     }
     if (zone === 'channels') {
@@ -1936,6 +1965,7 @@
     var key = event.key || event.keyIdentifier;
     var aliases = { Left: 'ArrowLeft', Up: 'ArrowUp', Right: 'ArrowRight', Down: 'ArrowDown',
       Return: 'Enter', Esc: 'Escape', Spacebar: ' ', GoBack: 'Escape', BrowserBack: 'Escape',
+      ContextMenu: 'Menu',
       'U+000D': 'Enter', 'U+001B': 'Escape', 'U+0008': 'Backspace', 'U+0020': ' ' };
     if (aliases[key]) return aliases[key];
     if (!key || key === 'Unidentified' || key === 'Unknown' || /^U\+/.test(key)) {
@@ -1945,8 +1975,78 @@
     return key;
   }
 
+  // Immersive TV mode: the sidebar becomes an auto-hiding translucent
+  // overlay, the remote's menu key toggles it, back closes it, and playback
+  // always fills the screen. "侧边栏常驻" in settings restores the classic
+  // permanently-visible layout.
+  var sidebarMenuOpen = false;
+  var sidebarMenuTimer = 0;
+  function sidebarPermanent() {
+    try { return window.localStorage.getItem('hongguo.sidebarPermanent') === '1'; }
+    catch (error) { return false; }
+  }
+  function immersiveMode() {
+    return typeof androidShell !== 'undefined' && androidShell && !sidebarPermanent();
+  }
+  function applySidebarMode() {
+    shell.classList.toggle('immersive', immersiveMode());
+    if (!immersiveMode()) closeSidebarMenu(false);
+  }
+  function armSidebarIdle() {
+    if (sidebarMenuTimer) clearTimeout(sidebarMenuTimer);
+    sidebarMenuTimer = setTimeout(function () {
+      sidebarMenuTimer = 0;
+      // Hand focus back to the playing surface: with the overlay hidden the
+      // stale sidebar focus would swallow the next OK key press.
+      if (sidebarMenuOpen) closeSidebarMenu(true);
+    }, 6000);
+  }
+  function openSidebarMenu() {
+    if (!immersiveMode() || sidebarMenuOpen) return;
+    sidebarMenuOpen = true;
+    shell.classList.add('sidebar-open');
+    armSidebarIdle();
+    // goFocus rejects elements that still compute as visibility:hidden, so
+    // wait until the just-added overlay class has been applied before
+    // moving focus into the menu.
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () { if (sidebarMenuOpen) goFocus(activeSidebar()); });
+      });
+    } else goFocus(activeSidebar());
+  }
+  function closeSidebarMenu(refocus) {
+    if (sidebarMenuTimer) { clearTimeout(sidebarMenuTimer); sidebarMenuTimer = 0; }
+    if (!sidebarMenuOpen) { if (refocus) goFocus(firstContentFocus()); return; }
+    sidebarMenuOpen = false;
+    shell.classList.remove('sidebar-open');
+    if (refocus) goFocus(document.querySelector('.hero-feed-focus') || firstContentFocus());
+  }
+  function togglePlaybackControls() {
+    if (shell.classList.contains('is-controls-hidden')) {
+      revealControls();
+      goFocus(firstVisible('.playback-buttons .control-button'));
+      return true;
+    }
+    hideControls();
+    return true;
+  }
+  function toggleSidebarMenu() {
+    if (sidebarMenuOpen) closeSidebarMenu(true);
+    else openSidebarMenu();
+  }
   function handleKey(event) {
     var key = normalizedKey(event);
+    if (key === 'Menu' && immersiveMode()) {
+      // The remote's menu key reveals the playback control bar, where
+      // 选集/选季/清晰度/倍速 live. The sidebar stays on the OK key.
+      if (shell.classList.contains('is-controls-hidden')) {
+        revealControls();
+        goFocus(firstVisible('.playback-buttons .control-button'));
+      } else hideControls();
+      event.preventDefault(); event.stopPropagation(); return;
+    }
+    if (sidebarMenuOpen) armSidebarIdle();
     if (handleEndRecommendationKey(key, !!event.repeat)) { event.preventDefault(); event.stopPropagation(); return; }
     if (accountKeypadOpen()) {
       numericKeypad.handleKey(key, !!event.repeat);
@@ -1983,6 +2083,15 @@
     }
     if (current && current.classList.contains('player-text-input') && ['Escape', 'ArrowUp', 'ArrowDown'].indexOf(key) < 0) return;
     var direction = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' })[key];
+
+    // OK on the playing video is the menu key in immersive mode: it opens
+    // the translucent sidebar instead of toggling playback, matching the
+    // official app. Inside the open menu, Enter confirms the focused item.
+    if (key === 'Enter' && immersiveMode() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen &&
+        current && zoneOf(current) === 'feed' && !sidebarMenuOpen) {
+      openSidebarMenu();
+      event.preventDefault(); event.stopPropagation(); return;
+    }
 
     if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) {
       if (key === 'Escape' || key === 'Backspace') handleBack();
@@ -2045,8 +2154,18 @@
       event.stopPropagation();
       return;
     }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down')) {
-      if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
+    // Unified TV grammar: up/down switches drama, left/right switches
+    // episodes. The player page steps episodes on both axes; the immersive
+    // recommendation feed steps episodes on left/right.
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down' || direction === 'left' || direction === 'right')) {
+      if (!event.repeat) {
+        if (direction === 'left' || direction === 'right') switchPlayerEpisode(direction === 'left' ? -1 : 1);
+        else switchPlayerEpisode(direction === 'up' ? -1 : 1);
+      }
+      event.preventDefault(); event.stopPropagation(); return;
+    }
+    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && immersiveMode() && zoneOf(current) === 'feed' && (direction === 'left' || direction === 'right')) {
+      if (!event.repeat) switchPlayerEpisode(direction === 'left' ? -1 : 1);
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen &&
@@ -2078,7 +2197,10 @@
   function switchPlayerEpisode(step, fromWheel) {
     var playerMode = pageMode() === 'player';
     var fullscreenRecommendation = pageMode() === 'recommend' && shell.classList.contains('is-cinema');
-    if ((!playerMode && !fullscreenRecommendation) || (!fromWheel && zoneOf(document.activeElement) !== 'feed') ||
+    // Immersive recommendation playback shares the episode-stepping control:
+    // left/right switch episodes with a notice at the first episode.
+    var immersiveRecommendation = pageMode() === 'recommend' && immersiveMode();
+    if ((!playerMode && !fullscreenRecommendation && !immersiveRecommendation) || (!fromWheel && zoneOf(document.activeElement) !== 'feed') ||
       detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || playerOptionsOpen || confirmOpen || discussionOpen) return false;
     step = Number(step);
     if (step !== -1 && step !== 1) return false;
@@ -2333,7 +2455,7 @@
     clearTimeout(controlsTimer);
     var video = document.getElementById('hero-video');
     if (!isPlaybackPage() || (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
-    controlsTimer = setTimeout(function () { hideControls(); }, 4000);
+    controlsTimer = setTimeout(function () { hideControls(); }, 6000);
   }
   function revealControls() {
     controlsManuallyHidden = false;
@@ -2696,7 +2818,7 @@
     clearRangeStallTimer();
     video.pause(); document.getElementById('player-options-message').textContent = uiText('ui.preparingQuality', '正在准备 {quality}…', { quality: value || uiText('ui.autoQuality', '自动清晰度') });
     qualityRequest = typeof AbortController === 'function' ? new AbortController() : null;
-    var q = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: value });
+    var q = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: value, sw: softDecodeFlag() });
     if (rangePlaybackEnabled()) q.set('mode', 'range');
     fetchData('/api/v1/play/info?' + q, qualityRequest ? { signal: qualityRequest.signal } : {}).then(function (data) {
       if (epoch !== qualityEpoch || generation !== feedGeneration || activePlayback !== playback || !playerOptionsOpen) return;
@@ -2869,6 +2991,7 @@
   }
   function handleBack() {
     var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement;
+    if (sidebarMenuOpen) { closeSidebarMenu(true); return true; }
     if (coreConnectionModalOpen) { closeCoreConnectionModal(true); return true; }
     if (autoCinemaCandidate) cancelPendingAutoCinema();
     if (endRecommendations && endRecommendations.close(true)) return true;
@@ -2890,6 +3013,16 @@
     else if (detailModalOpen) closeDetail();
     else if (discussionOpen) closeDiscussion();
     else if (pageMode() === 'account' && accountData && accountData.phase === 'mfa') { cancelAccountVerification(true); }
+    else if (pageMode() !== 'recommend' && pageMode() !== 'player') {
+      // A page opened from the sidebar menu returns straight to the home
+      // playback surface; in immersive mode the menu re-opens so the level
+      // change stays visible.
+      var homeItem = document.querySelector('.side-item[data-page="recommend"]');
+      if (homeItem) activatePage(homeItem, true);
+      else goFocus(firstContentFocus());
+      if (immersiveMode()) openSidebarMenu();
+      else goFocus(activeSidebar());
+    }
     else if (shell.classList.contains('is-cinema')) {
       exitCinema(false);
       revealControls();
@@ -2988,7 +3121,8 @@
     pendingAccountHomeProgram = null;
     startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null, { cardLaunch: !!program.cardLaunch });
   }
-  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand, togglePlaybackCommandMenu: togglePlaybackCommandMenu, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
+  window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand,
+    togglePlaybackCommandMenu: function () { if (immersiveMode()) return togglePlaybackControls(); return togglePlaybackCommandMenu(); }, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
@@ -3766,7 +3900,14 @@
 
   function switchRecommendation(step) {
     if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
-    playFeedItem(feedIndex + step);
+    var target = feedIndex + step;
+    var hops = 0;
+    while (hops < 5 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) {
+      target += step; hops++;
+    }
+    if (target < 0 || target >= feedItems.length) { playFeedItem(target); return; }
+    if (hops > 0) showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+    playFeedItem(target);
   }
 
   function installRecommendationGestures() {
@@ -4072,6 +4213,11 @@
     getDetail(playback.item).then(function (detail) {
       if (!canContinuePlayback(playback)) { deferContinuation(playback); return; }
       if (detail.vid_list && detail.vid_list[playback.episode]) {
+        // One unified playback surface: every episode - first or later -
+        // plays in the same recommendation flow, so up/down always switches
+        // drama and left/right always switches episode. The seamless atomic
+        // stream replace in the software-decoding bridge keeps the switch
+        // smooth without any page transition.
         playFeedItem(feedIndex, playback.episode + 1, 0, playback);
         return;
       }
@@ -4131,7 +4277,13 @@
             showNotice(uiText('content.continueSeason', '继续播放第{season}季', { season: successor.season_index }));
           } else {
             setPlayerStatus(''); revealControls();
-            if (pageMode() === 'recommend' && feedItems.length > 1) playFeedItem(feedIndex + 1);
+            if (pageMode() === 'recommend' && feedItems.length > 1) {
+              var next = feedIndex + 1;
+              var hops = 0;
+              while (hops < 5 && next < feedItems.length && isKnownVertical(feedItems[next].series_id)) { next++; hops++; }
+              autoEnterChain = (playback.autoChain || 0) + 1;
+              playFeedItem(Math.min(next, feedItems.length));
+            }
             else {
               var recommendations = false;
               var followPrompt = offerFollowAtEnd(playback, detail, function () { offerEndRecommendations(playback, detail); });
@@ -4244,6 +4396,19 @@
       return window.HongguoNativePlayer && window.HongguoNativePlayer.engine ? window.HongguoNativePlayer.engine() : '';
     } catch (ignored) { return ''; }
   }
+  // mpv's software decoder cannot demux bytevc1/bytevc2 tiers; the core drops
+  // them for software-decoding requests (sw=1). Hardware MediaCodec plays
+  // those same streams, so every other engine keeps the full tier list.
+  function softDecodeEngine() {
+    if (playbackEngineName() !== 'mpv') return false;
+    try {
+      var bridge = window.HongguoNativePlayer;
+      return !!(bridge && bridge.decoderMode && bridge.decoderMode() === 'mpv_software');
+    } catch (ignored) { return false; }
+  }
+  function softDecodeFlag() {
+    return softDecodeEngine() ? '1' : '';
+  }
   function nativePlaybackActive() {
     return document.documentElement.classList.contains('native-playback');
   }
@@ -4341,7 +4506,10 @@
     episodePrefetch.maybe({ item: playback.item, series_id: playback.item.series_id, vid: playback.vid,
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
       mode: (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '',
-      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 1 : 5,
+      // Two stable seconds is enough for WebView playback to settle; waiting
+      // five left manual switches and very short episodes without any
+      // prepared source.
+      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 1 : 2,
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
@@ -4687,7 +4855,7 @@
     setPlayerStatus(episodeLoadingText(playback.episode));
     video.pause();
     var painted = waitForPlaybackPaint(generation, request && request.signal);
-    var params = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: playbackPreferences.quality, fallback: '1' });
+    var params = new URLSearchParams({ series_id: playback.item.series_id, vid: playback.vid, quality: playbackPreferences.quality, fallback: '1', sw: softDecodeFlag() });
     var preparing = fetchData('/api/v1/play/info?' + params, request ? { signal: request.signal } : {});
     playbackInfoRequest = request;
     Promise.all([painted, preparing]).then(function (values) {
@@ -4718,7 +4886,49 @@
     });
     return true;
   }
+  // Local memory of dramas whose video dimensions were parsed as vertical.
+  // First-screen autoplay and drama switching skip them up front, instead of
+  // waiting for the first frame to find out. Capped and best effort.
+  function knownVerticalDramas() {
+    try { return JSON.parse(window.localStorage.getItem('hongguo.verticalSeries') || '[]'); }
+    catch (error) { return []; }
+  }
+  function isKnownVertical(seriesId) {
+    return !!seriesId && knownVerticalDramas().indexOf(String(seriesId)) >= 0;
+  }
+  function rememberVerticalDrama(seriesId, vertical) {
+    if (!seriesId) return;
+    try {
+      var list = knownVerticalDramas().filter(function (id) { return id !== String(seriesId); });
+      if (vertical) { list.push(String(seriesId)); if (list.length > 300) list = list.slice(-300); }
+      window.localStorage.setItem('hongguo.verticalSeries', JSON.stringify(list));
+    } catch (error) { /* Private-mode storage: the memory is best effort. */ }
+  }
+  // Chain depth of automatic drama selection. 0 means the user picked this
+  // drama (or a specific episode) themselves; automatic transitions — app
+  // start, end-of-season rotation, landscape skipping — increment it so the
+  // landscape filter only steers automatic choices, never manual picks.
+  var autoEnterChain = 0;
+  // Automatic selection prefers landscape dramas: vertical dramas look tiny
+  // on a TV. Applied only while autoEnterChain > 0 and only when the video
+  // dimensions are actually known; manual playback is never interrupted.
+  // The preference is a user-facing settings toggle and defaults to on.
+  var landscapeAutoOnly = (function () {
+    try { return window.localStorage.getItem('hongguo.landscapeOnly') !== '0'; }
+    catch (error) { return true; }
+  })();
+  function renderLandscapeSettings() {
+    var toggle = document.getElementById('landscape-toggle');
+    if (!toggle) return;
+    toggle.setAttribute('aria-pressed', landscapeAutoOnly ? 'true' : 'false');
+    toggle.classList.toggle('account-primary', landscapeAutoOnly);
+    toggle.textContent = uiText(landscapeAutoOnly ? 'settings.autoCinemaEnabled' : 'settings.autoCinemaDisabled', landscapeAutoOnly ? '已开启' : '已关闭');
+    var state = document.getElementById('landscape-state');
+    if (state) state.textContent = uiText('settings.landscapeState', '跳过只发生在自动连播，手动点开的剧不受影响。');
+  }
   function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint, recovery) {
+    var autoChain = autoEnterChain;
+    autoEnterChain = 0;
     closePlayerOptions(false);
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
@@ -4833,12 +5043,16 @@
           episodeCoverAllowed: keepEpisodeCover,
           preserveNativeTransition: sameSeries,
           endedPending: false,
+          autoChain: autoChain,
+          landscapeChecked: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
           timing: { episode: episode, automatic_next: fastContinuation || !!(recovery && recovery.automaticNext), started_at: switchStartedAt, ready_at: 0,
             prefetch_started_at: 0, prefetch_ready_at: 0, prefetch_ms: null, handoff_wait_ms: null,
             foreground_resolve_started_at: 0, foreground_resolve_ms: null,
             prepared_before_switch: false, reported: false } };
+        try { window.localStorage.setItem('hongguo.lastSeries', String(item.series_id || '')); }
+        catch (error) { /* Private-mode storage: the exclusion is best effort. */ }
         if (autoCinemaCandidate && generation === autoCinemaGeneration) autoCinemaSession = activePlayback;
         setFeatured(playing);
         updateDetailProgress();
@@ -4861,13 +5075,25 @@
           if (prepared && prepared.path) {
             playbackPrefetchHandoff = null;
             activePlayback.timing.handoff_wait_ms = Math.max(0, Date.now() - activePlayback.timing.handoff_started_at);
+            // Prefer the fully downloaded local file when it is already on
+            // disk: the tiny race window adds nothing when the download has
+            // finished and gives up in 40ms otherwise, falling back to the
+            // warmed range stream.
+            if (prepared.fullReady && typeof prepared.fullReady.then === 'function') {
+              return Promise.race([
+                prepared.fullReady,
+                new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 40); })
+              ]).then(function (full) {
+                return full && full.path && full.mode === 'full' ? full : prepared;
+              });
+            }
             return prepared;
           }
           // Revalidate the prepared cache entry; the core reuses the same file
           // and retries a failed or timed-out speculative job through the
           // normal resolver. The 1.2s handoff budget keeps navigation responsive.
           activePlayback.timing.foreground_resolve_started_at = Date.now();
-          var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1', mode: playbackMode };
+          var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1', mode: playbackMode, sw: softDecodeFlag() };
           return fetchData('/api/v1/play/info?' + new URLSearchParams(params), { signal: request.signal }).then(function (data) {
             playbackPrefetchHandoff = null;
             activePlayback.timing.foreground_resolve_ms = Math.max(0, Date.now() - activePlayback.timing.foreground_resolve_started_at);
@@ -4881,8 +5107,31 @@
         if (!data) return;
         playbackInfoRequest = null;
         if (!data.path) throw new Error(uiText('content.noSource', '播放服务没有返回地址'));
+        // Automatic selection prefers landscape dramas. The core reports the
+        // video dimensions from the parsed MP4 track header; unknown sizes
+        // (full-file fallback) stay unfiltered and get a second chance on the
+        // video's own metadata below.
+        function verticalAutoDrama() {
+          var width = Number(data.video_width) || 0, height = Number(data.video_height) || 0;
+          return width > 0 && height > 0 && height > width;
+        }
+        function skipVerticalAutoDrama() {
+          var chain = activePlayback.autoChain;
+          if (chain >= 6) { showNotice(uiText('ui.landscapeSkipLimit', '连续多部都是竖屏剧，继续播放本剧')); return false; }
+          if (feedIndex + 1 >= feedItems.length) { showNotice(uiText('ui.landscapeNoNext', '后面暂时没有更多横屏剧')); return false; }
+          showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+          autoEnterChain = chain + 1;
+          playFeedItem(feedIndex + 1);
+          return true;
+        }
         function attachPreparedSource() {
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
+          rememberVerticalDrama(activePlayback.item.series_id, verticalAutoDrama());
+          if (landscapeAutoOnly && activePlayback.autoChain > 0 && !activePlayback.landscapeChecked && pageMode() === 'recommend' &&
+              !detailModalOpen && !confirmOpen && verticalAutoDrama()) {
+            activePlayback.landscapeChecked = true;
+            if (skipVerticalAutoDrama()) return;
+          }
           activePlayback.timing.ready_at = Date.now();
           activePlayback.mode = data.mode || 'full';
           activePlayback.rangeFallback = data.range_fallback || '';
@@ -4945,7 +5194,27 @@
       return;
     }
     armPlaybackMenuHint();
-    playFeedItem(0);
+    autoEnterChain = 1;
+    // Official-app style launch: every cold start plays episode 1 of a drama
+    // picked pseudo-randomly from the head of the feed, never resuming the
+    // previously watched episode position and never repeating the drama that
+    // was playing when the app was last closed.
+    playFeedItem(pickAutoStartIndex(), 1, 0);
+  }
+
+  function pickAutoStartIndex() {
+    var pool = feedItems.slice(0, Math.min(8, feedItems.length));
+    var lastSeries = '';
+    try { lastSeries = String(window.localStorage.getItem('hongguo.lastSeries') || ''); }
+    catch (error) { lastSeries = ''; }
+    var fresh = pool.filter(function (item) { return item.series_id && item.series_id !== lastSeries; });
+    var candidates = fresh.length ? fresh : pool;
+    // Remembered vertical dramas never open the show; fall back when the
+    // whole head of the feed is vertical.
+    var landscape = candidates.filter(function (item) { return !isKnownVertical(item.series_id); });
+    if (landscape.length) candidates = landscape;
+    if (!candidates.length) return 0;
+    return feedItems.indexOf(candidates[Math.floor(Math.random() * candidates.length)]);
   }
 
   function isAutoCinemaCardLaunch(target) {
@@ -7179,6 +7448,7 @@
   document.querySelectorAll('.side-item').forEach(function (item) {
     item.addEventListener('click', function () {
       activatePage(item);
+      if (immersiveMode()) closeSidebarMenu(false);
       if (item.dataset.page === 'recommend') goFocus(firstContentFocus());
     });
   });
@@ -7600,6 +7870,19 @@
   var media = document.getElementById('hero-video');
   media.addEventListener('loadedmetadata', function () {
     if (!activePlayback || activePlayback.generation !== feedGeneration) return;
+    // Full-file fallback preparation cannot report video dimensions up front;
+    // measure them here so automatic landscape preference still applies.
+    if (landscapeAutoOnly && activePlayback.autoChain > 0 && !activePlayback.landscapeChecked && pageMode() === 'recommend' &&
+        media.videoWidth > 0 && media.videoHeight > media.videoWidth) {
+      activePlayback.landscapeChecked = true;
+      if (feedIndex + 1 < feedItems.length) {
+        showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+        autoEnterChain = activePlayback.autoChain + 1;
+        playFeedItem(feedIndex + 1);
+        return;
+      }
+      showNotice(uiText('ui.landscapeNoNext', '后面暂时没有更多横屏剧'));
+    }
     var position = activePlayback.position;
     var adapter = typeof window !== 'undefined' ? window.HongguoNativePlaybackAdapter : null;
     var nativeStartPosition = adapter && typeof adapter.isNative === 'function' && adapter.isNative();
@@ -7989,7 +8272,39 @@
     cancelPendingAutoCinema();
     if (!autoCinemaPreferences.choose(autoCinemaPreferences.enabled() ? 'disabled' : 'enabled')) showNotice(uiText('settings.saveFailed', '设置未能保存，请重试。'));
   });
+  function renderSidebarModeSettings() {
+    var toggle = document.getElementById('sidebar-mode-toggle');
+    if (!toggle) return;
+    toggle.setAttribute('aria-pressed', sidebarPermanent() ? 'true' : 'false');
+    toggle.classList.toggle('account-primary', sidebarPermanent());
+    toggle.textContent = uiText(sidebarPermanent() ? 'settings.sidebarPermanentEnabled' : 'settings.sidebarPermanentDisabled', sidebarPermanent() ? '常驻显示' : '自动隐藏');
+    var state = document.getElementById('sidebar-mode-state');
+    if (state) state.textContent = uiText('settings.sidebarModeState', '自动隐藏时，按遥控器菜单键呼出侧边栏，返回键收起。');
+  }
+  var sidebarModeToggle = document.getElementById('sidebar-mode-toggle');
+  if (sidebarModeToggle) {
+    sidebarModeToggle.addEventListener('click', function () {
+      try { window.localStorage.setItem('hongguo.sidebarPermanent', sidebarPermanent() ? '0' : '1'); }
+      catch (error) { /* Private-mode storage: keep the in-memory value. */ }
+      applySidebarMode();
+      renderSidebarModeSettings();
+      showNotice(uiText(sidebarPermanent() ? 'settings.sidebarPermanentOn' : 'settings.sidebarPermanentOff', sidebarPermanent() ? '已切换为常驻侧边栏' : '已切换为沉浸全屏播放'));
+    });
+  }
   var webosAudio = webosShell && window.HongguoWebOSAudio;
+  renderLandscapeSettings();
+  applySidebarMode();
+  renderSidebarModeSettings();
+  var landscapeToggle = document.getElementById('landscape-toggle');
+  if (landscapeToggle) {
+    landscapeToggle.addEventListener('click', function () {
+      landscapeAutoOnly = !landscapeAutoOnly;
+      try { window.localStorage.setItem('hongguo.landscapeOnly', landscapeAutoOnly ? '1' : '0'); }
+      catch (error) { /* Private-mode storage: keep the in-memory value. */ }
+      renderLandscapeSettings();
+      showNotice(uiText(landscapeAutoOnly ? 'settings.landscapeOn' : 'settings.landscapeOff', landscapeAutoOnly ? '已开启：自动连播仅播横屏剧' : '已关闭：自动连播不再跳过竖屏剧'));
+    });
+  }
   function updateWebOSAudioSettings() {
     var audio = webosShell && window.HongguoWebOSAudio;
     var supported = !!(audio && audio.supported);

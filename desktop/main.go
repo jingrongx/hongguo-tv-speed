@@ -59,7 +59,7 @@ func (a *desktopApp) GetWindowState() string {
 	return string(b)
 }
 func (a *desktopApp) OpenDownloads() {
-	wruntime.BrowserOpenURL(a.ctx, "https://github.com/aston314/hongguo-tv/releases")
+	wruntime.BrowserOpenURL(a.ctx, "https://github.com/jingrongx/hongguo-tv/releases")
 }
 func (a *desktopApp) GetUpdateStatus() string {
 	b, _ := json.Marshal(a.updater.snapshot())

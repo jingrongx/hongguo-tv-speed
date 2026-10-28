@@ -2,11 +2,22 @@ plugins {
     id "com.android.application"
 }
 
-def appVersion = "0.2.128"
-def mpvVersionCode = 79
+def appVersion = "0.2.139"
+def mpvVersionCode = 90
 def coreVersion = System.getenv("HONGGUO_CORE_VERSION") ?: "${appVersion}-dev"
+// Local release signing reads android/keystore.properties (never committed).
+// CI keeps the environment-variable path.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def localSigningReady = ["STORE_FILE", "STORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD"].every { p ->
+    keystoreProperties.getProperty(p) != null && !keystoreProperties.getProperty(p).trim().isEmpty()
+}
 def signingVariables = ["ANDROID_KEYSTORE_FILE", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]
-def releaseSigningReady = signingVariables.every { System.getenv(it) }
+def envSigningReady = signingVariables.every { System.getenv(it) }
+def releaseSigningReady = localSigningReady || envSigningReady
 
 android {
     namespace "rocks.aston.hongguotv"
@@ -15,10 +26,10 @@ android {
     flavorDimensions "player"
 
     defaultConfig {
-        applicationId "rocks.aston.hongguotv"
+        applicationId "com.jingrongx.hongguotv"
         minSdk 23
         targetSdk 35
-        versionCode 127
+        versionCode 138
         versionName appVersion
         buildConfigField "String", "CORE_VERSION", "\"${coreVersion}\""
         ndk {
@@ -48,7 +59,12 @@ android {
 
     signingConfigs {
         release {
-            if (releaseSigningReady) {
+            if (localSigningReady) {
+                storeFile file(keystoreProperties.getProperty("STORE_FILE"))
+                storePassword keystoreProperties.getProperty("STORE_PASSWORD")
+                keyAlias keystoreProperties.getProperty("KEY_ALIAS")
+                keyPassword keystoreProperties.getProperty("KEY_PASSWORD")
+            } else if (envSigningReady) {
                 storeFile file(System.getenv("ANDROID_KEYSTORE_FILE"))
                 storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("ANDROID_KEY_ALIAS")

@@ -511,7 +511,7 @@ test('MPV bridge keeps source replacement serialized and isolates delayed native
   assert.match(mpvBridgeSource, /stopFence\.onCommandReply\(requestId, error\)/);
   assert.match(mpvBridgeSource, /stopFence\.onEndFile\(\)/);
   assert.match(mpvBridgeSource, /stopFence\.onEventsDrained\(\)/);
-  assert.match(mpvBridgeSource, /handler\.postDelayed\(stopTimeout, 3000\)/);
+  assert.match(mpvBridgeSource, /handler\.postDelayed\(stopTimeout, 6000\)/);
   assert.match(start, /setPropertyBoolean\("pause", true\)[\s\S]*command\(new String\[\]\{"loadfile", target\.source, "replace"\}\)/);
   assert.match(mpvBridgeSource, /final Session observed = session/);
   assert.match(mpvBridgeSource, /final long observedGeneration = generation/);
@@ -544,7 +544,11 @@ test('MPV bridge waits for the stop fence before retiring a player whose Surface
   assert.match(surface, /MpvSurfaceLifecyclePolicy\.Action\.RECREATE_ACTIVE_SESSION\) guarded\(s/);
   assert.match(surface, /MpvSurfaceLifecyclePolicy\.Action\.RETIRE_ORPHAN/);
   assert.match(stop, /stopSurfaceEpoch = surfaceEpoch;[\s\S]*stopFence\.begin\(/);
-  assert.match(finish, /boolean sameSurface = !hadFence \|\| stopSurfaceEpoch == surfaceEpoch;[\s\S]*canReuseStoppedPlayer\([\s\S]*if \(!canReuse\) retire\(stopped\);/);
+  assert.match(finish, /boolean sameSurface = !hadFence \|\| stopSurfaceEpoch == surfaceEpoch;[\s\S]*canReuseStoppedPlayer\([\s\S]*if \(!canReuse\) retireAfterStop\(stopped\);/);
+  // The settled stop defers the next install and the deferred destroy so the
+  // vendor MediaCodec's asynchronous release cannot race a new decoder.
+  assert.match(finish, /retireAfterStop\(stopped\);[\s\S]*handler\.postDelayed\(this::installPendingSessionIfReady, MPV_POST_STOP_SETTLE_MS\)/);
+  assert.match(mpvBridgeSource, /private static final long MPV_POST_STOP_SETTLE_MS = 250;/);
   assert.match(bridge, /surfaceCreated\(SurfaceHolder surfaceHolder\)[\s\S]*installPendingSessionIfReady\(\)[\s\S]*start\(target\);/);
   assert.match(bridge, /surfaceChanged\(SurfaceHolder surfaceHolder, int format, int w, int h\)[\s\S]*installPendingSessionIfReady\(\)/);
   assert.match(bridge, /private boolean installPendingSessionIfReady\(\)[\s\S]*stopFence\.isActive\(\)[\s\S]*takePendingSessionWhenReady\(surfaceAvailable\(\)\)[\s\S]*installSession\(pending\)/);

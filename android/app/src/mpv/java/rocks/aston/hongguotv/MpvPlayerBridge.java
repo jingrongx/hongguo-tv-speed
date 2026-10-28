@@ -87,7 +87,18 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public boolean isAvailable() { return true; }
     @JavascriptInterface public String engine() { return "mpv"; }
     @JavascriptInterface public String diagnostics() { return diagnostic; }
-    @JavascriptInterface public String decoderMode() { return MpvDecodeMode.stored(preferences.getString("mpv_decode_mode", null)).id; }
+    @JavascriptInterface public String decoderMode() {
+        String stored = preferences.getString("mpv_decode_mode", null);
+        // One-time migration: devices that still carry the stored "自动解码"
+        // preference keep crashing on episode switches, because the vendor
+        // codec service aborts while the recreated MediaCodec releases. Move
+        // them to software decoding once; an explicit later choice is kept.
+        if ("mpv_auto".equals(stored) && !preferences.getBoolean("mpv_auto_migrated", false)) {
+            preferences.edit().putString("mpv_decode_mode", "mpv_software").putBoolean("mpv_auto_migrated", true).apply();
+            stored = "mpv_software";
+        }
+        return MpvDecodeMode.stored(stored).id;
+    }
     @JavascriptInterface public boolean safeStart() { return false; }
     @JavascriptInterface public void setDecoderMode(String value) {
         MpvDecodeMode mode = MpvDecodeMode.requested(value);
@@ -134,6 +145,22 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         }
         if (session == null && (player == null || playerQuiescent)) {
             generation++;
+            installSession(new Session(generation, id, source, data, MpvDecodeMode.stored(decoderMode())));
+            return;
+        }
+        // Software decoding keeps the vendor MediaCodec — and the crashing
+        // omx service behind it — completely out of the loop, so mpv's atomic
+        // loadfile replace can swap streams without the fenced stop. This is
+        // what makes episode switches seamless: no pause, no stop, no settle.
+        // Hardware decoding keeps the full fence because its codec service
+        // must never see two decoders race during a recreation.
+        if (player != null && !playerQuiescent && session != null
+                && MpvDecodeMode.stored(decoderMode()).hwdec.equals("no")) {
+            Session old = session;
+            generation++;
+            old.terminal = true;
+            if (old.timeout != null) handler.removeCallbacks(old.timeout);
+            old.player = null;
             installSession(new Session(generation, id, source, data, MpvDecodeMode.stored(decoderMode())));
             return;
         }
@@ -612,7 +639,14 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         stopTimeout = () -> {
             if (stopFence.onTimeout() && stoppingPlayer == player) finishStopBoundary(false);
         };
-        handler.postDelayed(stopTimeout, 3000);
+        // Slow TV boxes can spend well over three seconds stopping a stalled
+        // upstream source. A timed-out player used to be destroyed while its
+        // MediaCodec was still releasing asynchronously, which trips the
+        // vendor codec's "mReplyID == null" CHECK and kills the process
+        // (Fatal signal 6 in MediaCodec_loop on rk356x). Give the graceful
+        // stop twice the budget; the fence still settles early when mpv
+        // replies, so normal switches never wait this long.
+        handler.postDelayed(stopTimeout, 6000);
         try {
             player.setPropertyBoolean("pause", true);
             player.commandAsync(new String[]{"stop"}, requestId);
@@ -637,9 +671,26 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         stopSurfaceEpoch = -1;
         boolean canReuse = !hadFence || MpvSurfaceLifecyclePolicy.canReuseStoppedPlayer(
             reusable, sameSurface, surfaceAvailable());
-        if (!canReuse) retire(stopped);
+        if (!canReuse) retireAfterStop(stopped);
         else playerQuiescent = true;
-        installPendingSessionIfReady();
+        // A settled stop only means mpv delivered END_FILE and drained its
+        // events; the vendor decoder's own asynchronous release can still be
+        // running. Installing the next source immediately re-initializes a
+        // second MediaCodec on top of that release and crashes rk356x boxes
+        // (SIGABRT in MediaCodec_loop). One short settle beat lets the old
+        // release finish before loadfile starts a new decoder. The copy-mode
+        // hwdec path keeps the vendor RGA blitter out of the loop, so a
+        // shorter beat stays safe here.
+        if (hadFence && !destroyed) handler.postDelayed(this::installPendingSessionIfReady, MPV_POST_STOP_SETTLE_MS);
+        else installPendingSessionIfReady();
+    }
+    private static final long MPV_POST_STOP_SETTLE_MS = 250;
+    /** Retires a stopped player after the settle beat, so its MediaCodec release drains first. */
+    private void retireAfterStop(MPVLib stale) {
+        if (stale == null) return;
+        if (stale == player) { player = null; playerSurfaceAttached = false; playerQuiescent = true; }
+        if (destroyed) { try { stale.destroy(); } catch (RuntimeException ignored) {} return; }
+        handler.postDelayed(() -> { try { stale.destroy(); } catch (RuntimeException ignored) {} }, MPV_POST_STOP_SETTLE_MS);
     }
     private boolean installPendingSessionIfReady() {
         if (stopFence.isActive()) return false;

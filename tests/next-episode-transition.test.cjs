@@ -61,6 +61,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
     function episodeLoadingText(){return 'loading'}function setPlayerStatus(text,failed){calls.push('status:'+text);if(failed){clearLastPlaybackFrame();if(activePlayback&&activePlayback.presentation)activePlayback.presentation.failed=true}}function revealControls(){}
     function tickDanmaku(){}function scheduleControlsHide(){}function maybePrefetchNextEpisode(){}
     function showNotice(x){notices.push(x)}function playMedia(){calls.push('play');return Promise.resolve()}
+    function softDecodeFlag(){return ''}var autoEnterChain=0,landscapeAutoOnly=true;function pickAutoStartIndex(){return 0}
   `+slice('changeLibrary','toggleSaved')+slice('saveProgress','continueAfterEpisode')+
     slice('continueAfterEpisode','offerNextSeasonReservation')+slice('holdPlaybackAudio','renderFeed'),c);
   vm.runInContext('var media=video;'+source.slice(source.indexOf("  media.addEventListener('playing'"),source.indexOf("  document.addEventListener('visibilitychange'")),c);
@@ -190,7 +191,12 @@ test('webOS automatic handoffs consume the real coordinator on every episode usi
     assert.equal(f.document.getElementById('hero-video'), f.video, 'the original player and its listeners stay attached');
     assert.equal(f.c.media, f.video);
   }
-  assert.equal(f.resolverURLs.length, 4);
+  // Every episode gets two speculative requests: the fast range preparation
+  // and the background whole-file prefetch.
+  const rangeCount = f.resolverURLs.filter(u => new URLSearchParams(u.split('?')[1]).get('full') !== '1').length;
+  const fullCount = f.resolverURLs.filter(u => new URLSearchParams(u.split('?')[1]).get('full') === '1').length;
+  assert.equal(rangeCount, 4);
+  assert.equal(fullCount, 4);
 });
 test('MPV retries a failed speculative Range preparation through the foreground Range/full-file fallback contract',async()=>{
   const f=fixture({engine:'mpv'});f.gate.resolve();f.c.playFeedItem(0,2,0);

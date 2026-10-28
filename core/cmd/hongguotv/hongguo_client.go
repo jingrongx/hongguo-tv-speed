@@ -168,6 +168,8 @@ type PlayInfo struct {
 	Vid           string   `json:"vid"`
 	Mode          string   `json:"mode,omitempty"`
 	RangeFallback string   `json:"range_fallback,omitempty"`
+	VideoWidth    int      `json:"video_width,omitempty"`
+	VideoHeight   int      `json:"video_height,omitempty"`
 }
 
 type hongguoClient struct {
@@ -906,6 +908,8 @@ func (c *hongguoClient) PlayInfoRangeQuality(ctx context.Context, seriesID, vid,
 		Vid:           firstNonEmpty(value["vid"], vid),
 		Mode:          asString(value["mode"]),
 		RangeFallback: asString(value["range_fallback"]),
+		VideoWidth:    miniReelIntFromAny(value["video_width"]),
+		VideoHeight:   miniReelIntFromAny(value["video_height"]),
 	}, nil
 }
 
@@ -915,11 +919,13 @@ func embeddedMiniReelPlayInfo(ctx context.Context, seriesID, vid, quality string
 		return PlayInfo{}, err
 	}
 	return PlayInfo{
-		Path:      asString(value["path"]),
-		Quality:   asString(value["quality"]),
-		Qualities: value["qualities"].([]string),
-		Vid:       firstNonEmpty(value["vid"], vid),
-		Mode:      asString(value["mode"]),
+		Path:        asString(value["path"]),
+		Quality:     asString(value["quality"]),
+		Qualities:   value["qualities"].([]string),
+		Vid:         firstNonEmpty(value["vid"], vid),
+		Mode:        asString(value["mode"]),
+		VideoWidth:  miniReelIntFromAny(value["video_width"]),
+		VideoHeight: miniReelIntFromAny(value["video_height"]),
 	}, nil
 }
 

@@ -11,8 +11,8 @@ import android.os.Build;
 import android.os.Parcelable;
 
 public final class UpdateInstallReceiver extends BroadcastReceiver {
-    static final String ACTION_STATUS = "rocks.aston.hongguotv.UPDATE_INSTALL_STATUS";
-    static final String ACTION_RESULT = "rocks.aston.hongguotv.UPDATE_INSTALL_RESULT";
+    static final String ACTION_STATUS = "com.jingrongx.hongguotv.UPDATE_INSTALL_STATUS";
+    static final String ACTION_RESULT = "com.jingrongx.hongguotv.UPDATE_INSTALL_RESULT";
     static final String EXTRA_TARGET_CODE = "update_target_code";
     static final String EXTRA_STATUS = "update_status";
     static final String EXTRA_STATUS_MESSAGE = "update_status_message";

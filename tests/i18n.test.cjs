@@ -5,7 +5,6 @@ const vm = require('node:vm');
 
 const localeSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/locales/zh-CN.js'), 'utf8');
 const traditionalLocaleSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/locales/zh-TW.js'), 'utf8');
-const japaneseLocaleSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/locales/ja-JP.js'), 'utf8');
 const i18nSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/i18n.js'), 'utf8');
 const appHtml = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/index.html'), 'utf8');
 const paginationSource = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/pagination.js'), 'utf8');
@@ -36,7 +35,7 @@ function multilingualRuntime(overrides) {
     setItem(_, value) { this.value = value; }
   };
   const context = vm.createContext({ document, localStorage: storage, HongguoTVPreferences: bridge });
-  vm.runInContext(localeSource + '\n' + traditionalLocaleSource + '\n' + japaneseLocaleSource + '\n' + i18nSource, context);
+  vm.runInContext(localeSource + '\n' + traditionalLocaleSource + '\n' + i18nSource, context);
   return { context, document, listeners, storage };
 }
 
@@ -137,19 +136,15 @@ test('pagination keeps detailed errors in Chinese and uses a resource for transl
   assert.equal(pager.error, 'upstream detail');
 });
 
-test('traditional Chinese and Japanese resources are complete and selectable', () => {
+test('traditional Chinese resources are complete and selectable', () => {
   const { context } = multilingualRuntime();
-  assert.deepEqual(Array.from(context.HongguoI18n.supportedLocales()).sort(), ['ja-JP', 'zh-CN', 'zh-TW']);
+  assert.deepEqual(Array.from(context.HongguoI18n.supportedLocales()).sort(), ['zh-CN', 'zh-TW']);
   assert.equal(context.HongguoI18n.setLocale('zh-TW'), true);
   assert.equal(context.HongguoI18n.t('nav.recommend'), '推薦');
-  assert.equal(context.HongguoI18n.setLocale('ja'), true);
-  assert.equal(context.HongguoI18n.locale(), 'ja-JP');
-  assert.equal(context.HongguoI18n.t('common.close'), '閉じる');
+  assert.equal(context.HongguoI18n.setLocale('ja'), false);
   assert.equal(context.HongguoI18n.missingKeys('zh-TW').length, 0);
-  assert.equal(context.HongguoI18n.missingKeys('ja-JP').length, 0);
   const sourceKeys = Object.keys(context.HongguoLocales['zh-CN']).sort();
   assert.deepEqual(Array.from(Object.keys(context.HongguoLocales['zh-TW'])).sort(), sourceKeys);
-  assert.deepEqual(Array.from(Object.keys(context.HongguoLocales['ja-JP'])).sort(), sourceKeys);
 });
 
 test('localized status rendering is not overwritten by static locale application', () => {
@@ -165,9 +160,6 @@ test('localized status rendering is not overwritten by static locale application
   assert.equal(context.HongguoI18n.setLocale('zh-TW'), true);
   context.HongguoI18n.apply(document);
   assert.equal(label.textContent, '已連線');
-  assert.equal(context.HongguoI18n.setLocale('ja-JP'), true);
-  context.HongguoI18n.apply(document);
-  assert.equal(label.textContent, '接続済み');
 });
 
 test('locale preference uses the Android bridge and does not change on persistence failure', () => {
@@ -186,6 +178,6 @@ test('locale preference uses the Android bridge and does not change on persisten
     readLocale() { return 'zh-CN'; },
     writeLocale() { throw new Error('bridge unavailable'); }
   } });
-  assert.equal(failing.context.HongguoI18n.setLocale('ja-JP'), false);
+  assert.equal(failing.context.HongguoI18n.setLocale('zh-TW'), false);
   assert.equal(failing.context.HongguoI18n.locale(), 'zh-CN');
 });

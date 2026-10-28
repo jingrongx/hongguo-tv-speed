@@ -12,8 +12,8 @@ test('MPV opts into Range playback and retains the normal full-file fallback con
   const context = vm.createContext({window:{HongguoNativePlayer:{engine:()=> 'mpv'}}});
   vm.runInContext(policy + '\nthis.rangePlaybackEnabled = rangePlaybackEnabled;', context);
   assert.equal(context.rangePlaybackEnabled(), true);
-  assert.match(source, /var params = \{ series_id: item\.series_id, vid: vid, quality: playbackPreferences\.quality, fallback: '1', mode: playbackMode \}/);
-  assert.match(source, /Object\.assign\(\{\}, target, \{ prefetch: '1' \}\)/);
-  assert.match(source, /new URLSearchParams\(\{ series_id: playback\.item\.series_id, vid: playback\.vid, quality: playbackPreferences\.quality, fallback: '1' \}\)/);
+  assert.match(source, /var params = \{ series_id: item\.series_id, vid: vid, quality: playbackPreferences\.quality, fallback: '1', mode: playbackMode, sw: softDecodeFlag\(\) \}/);
+  assert.match(source, /Object\.assign\(\{\}, target, \{ prefetch: '1', sw: softDecodeFlag\(\) \}\)/);
+  assert.match(source, /new URLSearchParams\(\{ series_id: playback\.item\.series_id, vid: playback\.vid, quality: playbackPreferences\.quality, fallback: '1', sw: softDecodeFlag\(\) \}\)/);
   assert.match(source, /var stallDelay = webosShell && !playback\.started \? webOSRangeStallFallbackMs : playbackEngineName\(\) === 'mpv' \? 40000 : 45000/);
 });
