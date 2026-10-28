@@ -145,52 +145,46 @@ jobs:
 
       - name: Stage speed-edition assets and manifests
         env:
+          VERSION: ${{ steps.ver.outputs.version }}
           CODE: ${{ steps.ver.outputs.code }}
         run: |
           set -e
-          CODE="$CODE" VERSION="$VERSION" python3 - <<'PY'
-          import hashlib, json, os, shutil
-          v = os.environ['VERSION']
-          code = int(os.environ['CODE'])
-          stage = 'stage'
-          os.makedirs(stage, exist_ok=True)
-          shutil.copy('android/app/build/outputs/apk/mpv/release/app-mpv-release.apk',
-                      f'{stage}/hongguo-tv-speed-mpv-{v}.apk')
-          shutil.copy('android/app/build/outputs/apk/standard/release/app-standard-release.apk',
-                      f'{stage}/hongguo-tv-speed-{v}.apk')
-          variants = [
-              ('mpv', 'com.jingrongx.hongguotv.mpv'),
-              ('standard', 'com.jingrongx.hongguotv'),
-          ]
-          for variant, package in variants:
-              suffix = 'mpv-' if variant == 'mpv' else ''
-              apk = f'{stage}/hongguo-tv-speed-{suffix}{v}.apk'
-              digest = hashlib.sha256(open(apk, 'rb').read()).hexdigest()
-              manifest = {
-                  'schema': 1,
-                  'version_code': code,
-                  'min_sdk': 23,
-                  'version_name': v,
-                  'package_name': package,
-                  'size': os.path.getsize(apk),
-                  'sha256': digest,
-                  'download_url': f'https://github.com/jingrongx/hongguo-tv-speed/releases/download/v{v}/hongguo-tv-speed-{suffix}{v}.apk',
-                  'release_notes': f'极速版 {v}',
-                  'variant': variant,
-              }
-              name = 'update-mpv.json' if variant == 'mpv' else 'update.json'
-              with open(f'{stage}/{name}', 'w', encoding='utf-8') as handle:
-                  json.dump(manifest, handle, ensure_ascii=False, indent=2)
-                  handle.write('
-')
-          with open(f'{stage}/SHA256SUMS.txt', 'w') as handle:
-              for entry in sorted(os.listdir(stage)):
-                  if entry.endswith('.apk'):
-                      digest = hashlib.sha256(open(f'{stage}/{entry}', 'rb').read()).hexdigest()
-                      handle.write(f'{digest}  {entry}
-')
-          print(open(f'{stage}/update-mpv.json').read())
-          PY
+          test -n "$VERSION" && test -n "$CODE"
+          mkdir -p stage
+          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-tv-speed-mpv-$VERSION.apk"
+          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
+          MPV_SHA=$(sha256sum "stage/hongguo-tv-speed-mpv-$VERSION.apk" | cut -d' ' -f1)
+          MPV_SIZE=$(stat -c%s "stage/hongguo-tv-speed-mpv-$VERSION.apk")
+          STD_SHA=$(sha256sum "stage/hongguo-tv-speed-$VERSION.apk" | cut -d' ' -f1)
+          STD_SIZE=$(stat -c%s "stage/hongguo-tv-speed-$VERSION.apk")
+          printf '{
+  "schema": 1,
+  "version_code": %s,
+  "min_sdk": 23,
+  "version_name": "%s",
+  "package_name": "com.jingrongx.hongguotv.mpv",
+  "size": %s,
+  "sha256": "%s",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v%s/hongguo-tv-speed-mpv-%s.apk",
+  "release_notes": "极速版 %s",
+  "variant": "mpv"
+}
+' "$CODE" "$VERSION" "$MPV_SIZE" "$MPV_SHA" "$VERSION" "$VERSION" "$VERSION" > stage/update-mpv.json
+          printf '{
+  "schema": 1,
+  "version_code": %s,
+  "min_sdk": 23,
+  "version_name": "%s",
+  "package_name": "com.jingrongx.hongguotv",
+  "size": %s,
+  "sha256": "%s",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v%s/hongguo-tv-speed-%s.apk",
+  "release_notes": "极速版 %s",
+  "variant": "standard"
+}
+' "$CODE" "$VERSION" "$STD_SIZE" "$STD_SHA" "$VERSION" "$VERSION" "$VERSION" > stage/update.json
+          sha256sum stage/*.apk > stage/SHA256SUMS.txt
+          python3 -c "import json; json.load(open('stage/update-mpv.json')); json.load(open('stage/update.json')); print('manifests valid')"
 
       - name: Remove temporary signing key
         if: always()
