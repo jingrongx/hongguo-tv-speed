@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "version_code": 139,
+  "min_sdk": 23,
+  "version_name": "0.2.140",
+  "package_name": "com.jingrongx.hongguotv",
+  "size": 19183617,
+  "sha256": "01a8a791509cd34d808f2425c8075c5a8f30c555901de5b4f682d979950ad551",
+  "download_url": "https://github.com/jingrongx/hongguo-tv/releases/download/v0.2.140/hongguo-tv-speed-0.2.140.apk",
+  "release_notes": "极速版：沉浸交互、无缝换集、软件解码稳定、bytevc1 兼容",
+  "variant": "standard"
+}

@@ -54,12 +54,13 @@ final class UpdatePolicy {
         URI uri = URI.create(download);
         String path = uri.getRawPath();
         String prefix = "/" + REPOSITORY + "/releases/download/v" + name + "/";
+        // Speed-edition asset naming, distinct from the upstream project.
         if (!"https".equals(uri.getScheme()) || !"github.com".equals(uri.getHost())
                 || uri.getRawUserInfo() != null || uri.getPort() != -1
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
-                || path == null || !path.equals(prefix + "hongguo-tv-" +
+                || path == null || !path.equals(prefix + "hongguo-tv-speed-" +
                     (installedPackage.endsWith(".mpv") ? "mpv-" : "") + name + ".apk"))
-            throw new IllegalArgumentException("安装包地址不是红果短剧公开发行文件");
+            throw new IllegalArgumentException("安装包地址不是红果短剧极速版公开发行文件");
     }
 
     static boolean matchingArchive(String installedPackage, int installedCode, String archivePackage,
