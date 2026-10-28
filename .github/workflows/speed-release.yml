@@ -157,32 +157,34 @@ jobs:
           MPV_SIZE=$(stat -c%s "stage/hongguo-tv-speed-mpv-$VERSION.apk")
           STD_SHA=$(sha256sum "stage/hongguo-tv-speed-$VERSION.apk" | cut -d' ' -f1)
           STD_SIZE=$(stat -c%s "stage/hongguo-tv-speed-$VERSION.apk")
-          printf '{
-  "schema": 1,
-  "version_code": %s,
-  "min_sdk": 23,
-  "version_name": "%s",
-  "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": %s,
-  "sha256": "%s",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v%s/hongguo-tv-speed-mpv-%s.apk",
-  "release_notes": "极速版 %s",
-  "variant": "mpv"
-}
-' "$CODE" "$VERSION" "$MPV_SIZE" "$MPV_SHA" "$VERSION" "$VERSION" "$VERSION" > stage/update-mpv.json
-          printf '{
-  "schema": 1,
-  "version_code": %s,
-  "min_sdk": 23,
-  "version_name": "%s",
-  "package_name": "com.jingrongx.hongguotv",
-  "size": %s,
-  "sha256": "%s",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v%s/hongguo-tv-speed-%s.apk",
-  "release_notes": "极速版 %s",
-  "variant": "standard"
-}
-' "$CODE" "$VERSION" "$STD_SIZE" "$STD_SHA" "$VERSION" "$VERSION" "$VERSION" > stage/update.json
+          {
+            echo '{'
+            echo '  "schema": 1,'
+            echo "  \"version_code\": $CODE,"
+            echo '  "min_sdk": 23,'
+            echo "  \"version_name\": \"$VERSION\","
+            echo '  "package_name": "com.jingrongx.hongguotv.mpv",'
+            echo "  \"size\": $MPV_SIZE,"
+            echo "  \"sha256\": \"$MPV_SHA\","
+            echo '  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v'"$VERSION"'/hongguo-tv-speed-mpv-'"$VERSION"'.apk",'
+            echo '  "release_notes": "极速版",'
+            echo '  "variant": "mpv"'
+            echo '}'
+          } > stage/update-mpv.json
+          {
+            echo '{'
+            echo '  "schema": 1,'
+            echo "  \"version_code\": $CODE,"
+            echo '  "min_sdk": 23,'
+            echo "  \"version_name\": \"$VERSION\","
+            echo '  "package_name": "com.jingrongx.hongguotv",'
+            echo "  \"size\": $STD_SIZE,"
+            echo "  \"sha256\": \"$STD_SHA\","
+            echo '  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v'"$VERSION"'/hongguo-tv-speed-'"$VERSION"'.apk",'
+            echo '  "release_notes": "极速版",'
+            echo '  "variant": "standard"'
+            echo '}'
+          } > stage/update.json
           sha256sum stage/*.apk > stage/SHA256SUMS.txt
           python3 -c "import json; json.load(open('stage/update-mpv.json')); json.load(open('stage/update.json')); print('manifests valid')"
 
