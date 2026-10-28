@@ -127,6 +127,34 @@ jobs:
           build x86_64      amd64 x86_64-linux-android23-clang
           ls -la $OUT/*/libhongguotv.so
 
+      - name: Fetch mpv-android libraries
+        run: |
+          set -e
+          mkdir -p mpv-dl && cd mpv-dl
+          for abi in arm64-v8a armeabi-v7a x86; do
+            curl -sL --retry 3 -o apk-$abi "https://github.com/mpv-android/mpv-android/releases/download/2026-09-17/app-default-$abi-release.apk"
+            unzip -o -q apk-$abi "lib/$abi/*" -d ext-$abi
+          done
+          OUT=../android/app/src/mpv/jniLibs
+          mkdir -p $OUT/arm64-v8a $OUT/armeabi-v7a $OUT/x86 $OUT/x86_64
+          cp ext-arm64-v8a/lib/arm64-v8a/*.so $OUT/arm64-v8a/
+          cp ext-armeabi-v7a/lib/armeabi-v7a/*.so $OUT/armeabi-v7a/
+          cp ext-x86/lib/x86/*.so $OUT/x86/
+          # x86_64 emulators reuse the x86 libraries; the device build only
+          # ships arm64 and armv7 with the bridge compiled per ABI.
+          cp ext-x86/lib/x86/*.so $OUT/x86_64/
+
+      - name: Build MPV JNI bridge
+        run: |
+          set -e
+          NDK_BIN="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          SYSROOT="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          for t in "arm64-v8a aarch64-linux-android23" "armeabi-v7a armv7a-linux-androideabi23" "x86 i686-linux-android23"; do
+            set -- $t
+            "$NDK_BIN/clang++" --target=$2 --sysroot="$SYSROOT"               -std=c++17 -O2 -fPIC -shared -static-libstdc++ -Wl,--no-undefined               -Iandroid/mpv-jni/include android/mpv-jni/bridge.cpp               -Landroid/app/src/mpv/jniLibs/$1 -lmpv -lavcodec -landroid               -o android/app/src/mpv/jniLibs/$1/libhongguompv.so
+          done
+          ls -la android/app/src/mpv/jniLibs/arm64-v8a/libhongguompv.so
+
       - name: Assemble APKs
         run: |
           set -e
