@@ -65,13 +65,17 @@ jobs:
           echo "Version $V, code $CODE"
 
       - name: Pin build.gradle to the tag version
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          CODE: ${{ steps.ver.outputs.code }}
         run: |
           set -e
+          test -n "$VERSION" && test -n "$CODE"
           # Anchored replacements: a loose "versionCode [0-9]*" would also hit
           # the flavor's "versionCode mpvVersionCode" reference and corrupt it.
-          sed -i 's/def appVersion = ".*"/def appVersion = "'"$VERSION"'"/' android/app/build.gradle
-          sed -i 's/^            versionCode [0-9][0-9]*/            versionCode '"$CODE"'/' android/app/build.gradle
-          sed -i 's/def mpvVersionCode = [0-9][0-9]*/def mpvVersionCode = '"$CODE"'/' android/app/build.gradle
+          sed -i "s/def appVersion = \".*\"/def appVersion = \"$VERSION\"/" android/app/build.gradle
+          sed -i "s/^            versionCode [0-9][0-9]*/            versionCode $CODE/" android/app/build.gradle
+          sed -i "s/def mpvVersionCode = [0-9][0-9]*/def mpvVersionCode = $CODE/" android/app/build.gradle
           grep -E "def appVersion|versionCode" android/app/build.gradle | head -3
 
       - name: Restore signing key
@@ -106,6 +110,8 @@ jobs:
         run: node --test tests/*.test.cjs
 
       - name: Build Go cores (three ABIs)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -e
           NDK_BIN="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -138,46 +144,53 @@ jobs:
           "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/mpv/release/app-mpv-release.apk | head -2
 
       - name: Stage speed-edition assets and manifests
+        env:
+          CODE: ${{ steps.ver.outputs.code }}
         run: |
           set -e
-          CODE="${{ steps.ver.outputs.code }}"
-          mkdir -p stage
-          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-tv-speed-mpv-$VERSION.apk"
-          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
-          cd stage
-          MPV_SHA=$(sha256sum "hongguo-tv-speed-mpv-$VERSION.apk" | cut -d' ' -f1)
-          MPV_SIZE=$(stat -c%s "hongguo-tv-speed-mpv-$VERSION.apk")
-          STD_SHA=$(sha256sum "hongguo-tv-speed-$VERSION.apk" | cut -d' ' -f1)
-          STD_SIZE=$(stat -c%s "hongguo-tv-speed-$VERSION.apk")
-          cat > update-mpv.json <<EOF
-          {
-            "schema": 1,
-            "version_code": $CODE,
-            "min_sdk": 23,
-            "version_name": "$VERSION",
-            "package_name": "com.jingrongx.hongguotv.mpv",
-            "size": $MPV_SIZE,
-            "sha256": "$MPV_SHA",
-            "download_url": "https://github.com/jingrongx/hongguo-tv/releases/download/v$VERSION/hongguo-tv-speed-mpv-$VERSION.apk",
-            "release_notes": "极速版 $VERSION",
-            "variant": "mpv"
-          }
-          EOF
-          cat > update.json <<EOF
-          {
-            "schema": 1,
-            "version_code": $CODE,
-            "min_sdk": 23,
-            "version_name": "$VERSION",
-            "package_name": "com.jingrongx.hongguotv",
-            "size": $STD_SIZE,
-            "sha256": "$STD_SHA",
-            "download_url": "https://github.com/jingrongx/hongguo-tv/releases/download/v$VERSION/hongguo-tv-speed-$VERSION.apk",
-            "release_notes": "极速版 $VERSION",
-            "variant": "standard"
-          }
-          EOF
-          sha256sum *.apk > SHA256SUMS.txt
+          CODE="$CODE" VERSION="$VERSION" python3 - <<'PY'
+          import hashlib, json, os, shutil
+          v = os.environ['VERSION']
+          code = int(os.environ['CODE'])
+          stage = 'stage'
+          os.makedirs(stage, exist_ok=True)
+          shutil.copy('android/app/build/outputs/apk/mpv/release/app-mpv-release.apk',
+                      f'{stage}/hongguo-tv-speed-mpv-{v}.apk')
+          shutil.copy('android/app/build/outputs/apk/standard/release/app-standard-release.apk',
+                      f'{stage}/hongguo-tv-speed-{v}.apk')
+          variants = [
+              ('mpv', 'com.jingrongx.hongguotv.mpv'),
+              ('standard', 'com.jingrongx.hongguotv'),
+          ]
+          for variant, package in variants:
+              suffix = 'mpv-' if variant == 'mpv' else ''
+              apk = f'{stage}/hongguo-tv-speed-{suffix}{v}.apk'
+              digest = hashlib.sha256(open(apk, 'rb').read()).hexdigest()
+              manifest = {
+                  'schema': 1,
+                  'version_code': code,
+                  'min_sdk': 23,
+                  'version_name': v,
+                  'package_name': package,
+                  'size': os.path.getsize(apk),
+                  'sha256': digest,
+                  'download_url': f'https://github.com/jingrongx/hongguo-tv-speed/releases/download/v{v}/hongguo-tv-speed-{suffix}{v}.apk',
+                  'release_notes': f'极速版 {v}',
+                  'variant': variant,
+              }
+              name = 'update-mpv.json' if variant == 'mpv' else 'update.json'
+              with open(f'{stage}/{name}', 'w', encoding='utf-8') as handle:
+                  json.dump(manifest, handle, ensure_ascii=False, indent=2)
+                  handle.write('
+')
+          with open(f'{stage}/SHA256SUMS.txt', 'w') as handle:
+              for entry in sorted(os.listdir(stage)):
+                  if entry.endswith('.apk'):
+                      digest = hashlib.sha256(open(f'{stage}/{entry}', 'rb').read()).hexdigest()
+                      handle.write(f'{digest}  {entry}
+')
+          print(open(f'{stage}/update-mpv.json').read())
+          PY
 
       - name: Remove temporary signing key
         if: always()
