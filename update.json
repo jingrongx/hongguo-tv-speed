@@ -4,8 +4,8 @@
   "min_sdk": 23,
   "version_name": "0.2.141",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19183603,
-  "sha256": "0958e694c80f98a7548811980e4a6baba128c186fde75df46f41fe09840d1f12",
+  "size": 19183595,
+  "sha256": "658ee0ac01ee5e0ee43c2880f0ba2dfba671139d3fab60904db620a63240b1c5",
   "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.141/hongguo-tv-speed-0.2.141.apk",
   "release_notes": "极速版",
   "variant": "standard"
