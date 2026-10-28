@@ -59,7 +59,7 @@ jobs:
           set -e
           V="${GITHUB_REF_NAME#v}"
           CODE=$(echo "$V" | awk -F. '{print $1*10000 + $2*100 + $3}')
-          echo "version=$V" >> "$GITHUB_ENV"
+          echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "Version $V, code $CODE"
@@ -194,6 +194,7 @@ jobs:
 
       - name: Create release and upload assets
         env:
+          VERSION: ${{ steps.ver.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
@@ -206,6 +207,7 @@ jobs:
 
       - name: Publish update manifests to main
         env:
+          VERSION: ${{ steps.ver.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
