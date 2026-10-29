@@ -153,6 +153,19 @@ public class MainActivity extends Activity {
                     finishAndRemoveTask();
                 });
             }
+
+            // First-launch guide flag. Persisted here so the guide survives
+            // WebView storage wipes; the page double-checks localStorage too.
+            @JavascriptInterface
+            public boolean hasSeenOnboarding() {
+                return getSharedPreferences("hongguo_app", MODE_PRIVATE).getBoolean("onboarded", false);
+            }
+
+            @JavascriptInterface
+            public void markOnboardingSeen() {
+                getSharedPreferences("hongguo_app", MODE_PRIVATE)
+                        .edit().putBoolean("onboarded", true).apply();
+            }
         }, "HongguoTVApp");
         webView.setWebViewClient(new WebViewClient() {
             @Override

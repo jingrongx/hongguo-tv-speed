@@ -2108,14 +2108,32 @@
     showNotice(uiText('ui.exitUnsupported', '当前环境不支持在应用内退出'));
   }
   // First-launch quick guide: shown once, dismissed by any key press.
+  // "Seen" lives in two stores: page localStorage and the Android shell
+  // (SharedPreferences). Either one marking it keeps the guide away, so a
+  // WebView storage wipe can no longer bring it back on every launch.
   var onboardingOpen = false;
+  function onboardingSeen() {
+    try { if (window.localStorage.getItem('hongguo.onboarded') === '1') return true; }
+    catch (error) { /* storage unavailable */ }
+    var bridge = typeof window !== 'undefined' ? window.HongguoTVApp : null;
+    if (bridge && typeof bridge.hasSeenOnboarding === 'function') {
+      try { return bridge.hasSeenOnboarding() === true; }
+      catch (error) { /* bridge race during startup */ }
+    }
+    return false;
+  }
+  function markOnboardingSeen() {
+    try { window.localStorage.setItem('hongguo.onboarded', '1'); }
+    catch (error) { /* Private-mode storage */ }
+    var bridge = typeof window !== 'undefined' ? window.HongguoTVApp : null;
+    if (bridge && typeof bridge.markOnboardingSeen === 'function') {
+      try { bridge.markOnboardingSeen(); } catch (error) { /* bridge race */ }
+    }
+  }
   function showOnboardingOnce() {
-    var seen = false;
-    try { seen = window.localStorage.getItem('hongguo.onboarded') === '1'; }
-    catch (error) { seen = true; }
     var overlay = document.getElementById('onboarding-overlay');
     if (!overlay) return;
-    if (seen) { overlay.classList.add('is-hidden'); return; }
+    if (onboardingSeen()) { overlay.classList.add('is-hidden'); return; }
     onboardingOpen = true;
     overlay.classList.remove('is-hidden');
     overlay.setAttribute('aria-hidden', 'false');
@@ -2125,8 +2143,7 @@
     onboardingOpen = false;
     var overlay = document.getElementById('onboarding-overlay');
     if (overlay) { overlay.classList.add('is-hidden'); overlay.setAttribute('aria-hidden', 'true'); }
-    try { window.localStorage.setItem('hongguo.onboarded', '1'); }
-    catch (error) { /* Private-mode storage: guide reappears next launch. */ }
+    markOnboardingSeen();
   }
   // Loudness normalization (MPV engine only): evens out volume across
   // dramas. Applied at startup and whenever the setting changes.
@@ -2628,6 +2645,9 @@
   function episodeLoadingText(episode) { return episode > 0 ? uiText('content.episodeNumber', '第{episode}集', { episode: episode }) : '…'; }
   function setControlIcon(action, label, icon) {
     var button = document.querySelector('[data-action="' + action + '"]');
+    // Buttons removed from the control bar (e.g. fullscreen in the fused
+    // dial panel) must never break the whole startup with a TypeError.
+    if (!button) return;
     var text = button.querySelector('.control-label, .dial-label');
     if (text.textContent !== label) text.textContent = label;
     button.setAttribute('aria-label', label);
