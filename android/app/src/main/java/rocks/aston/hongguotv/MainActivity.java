@@ -88,6 +88,7 @@ public class MainActivity extends Activity {
         pendingHomeProgram = initialHomeProgram == null ? null : initialHomeProgram.toString();
         homeChannelManager = new TvHomeChannelManager(this);
         homeChannelManager.ensureDefaultChannel(false);
+        selfHealDecodeMode();
         startCoreService();
         webView = new WebView(this) {
             @Override
@@ -370,6 +371,22 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * A previous session that died in the foreground (crash never reached
+     * onPause) most likely lost the fight with the vendor codec service.
+     * Demote the device to software decoding once — it never touches that
+     * service, so the next sessions stay stable. A manual choice made later
+     * in settings overwrites this value normally.
+     */
+    private void selfHealDecodeMode() {
+        android.content.SharedPreferences playback =
+                getSharedPreferences("hongguo_mpv_playback", MODE_PRIVATE);
+        if (playback.getBoolean("clean_background", true)) return;
+        if (!"mpv_auto".equals(playback.getString("mpv_decode_mode", null))
+                && playback.getString("mpv_decode_mode", null) != null) return;
+        playback.edit().putString("mpv_decode_mode", "mpv_software").apply();
+    }
+
     private void startCoreService() {
         CoreService.prepareStart();
         Intent intent = new Intent(this, CoreService.class);
@@ -647,6 +664,11 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        // Reaching onPause means the session ended without a crash. A native
+        // crash during playback never gets here, which is exactly what the
+        // startup self-heal below detects.
+        getSharedPreferences("hongguo_mpv_playback", MODE_PRIVATE)
+                .edit().putBoolean("clean_background", true).apply();
         activityForeground = false;
         // Release the actual window flag while backgrounded, but retain the
         // playback intent so a foreground return can restore it immediately.
@@ -671,6 +693,9 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityForeground = true;
+        // From here until the next onPause a native crash is detectable.
+        getSharedPreferences("hongguo_mpv_playback", MODE_PRIVATE)
+                .edit().putBoolean("clean_background", false).apply();
         // Reapply the flag before WebView/native playback is resumed. This
         // covers the case where no new `playing` callback is emitted after a
         // short background/foreground transition.

@@ -160,14 +160,14 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             installSession(new Session(generation, id, source, data, MpvDecodeMode.stored(decoderMode())));
             return;
         }
-        // Software decoding keeps the vendor MediaCodec — and the crashing
-        // omx service behind it — completely out of the loop, so mpv's atomic
-        // loadfile replace can swap streams without the fenced stop. This is
-        // what makes episode switches seamless: no pause, no stop, no settle.
-        // Hardware decoding keeps the full fence because its codec service
-        // must never see two decoders race during a recreation.
-        if (player != null && !playerQuiescent && session != null
-                && MpvDecodeMode.stored(decoderMode()).hwdec.equals("no")) {
+        // Atomic loadfile replace for every engine: mpv keeps the decoded
+        // picture on screen while the next source loads, so episode switches
+        // show no black gap and no spinner. Hardware decoders are handed over
+        // inside mpv during the replace; devices whose vendor codec service
+        // cannot survive that handoff crash once, and the activity's crash
+        // self-heal demotes them to software decoding (which never touches
+        // that service) for every session afterwards.
+        if (player != null && !playerQuiescent && session != null) {
             Session old = session;
             generation++;
             old.terminal = true;
