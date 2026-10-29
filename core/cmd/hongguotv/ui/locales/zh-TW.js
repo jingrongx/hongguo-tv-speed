@@ -715,6 +715,7 @@
       'ui.landscapeSkipped': '豎屏劇已跳過，自動播放橫屏劇',
     'ui.landscapeNoNext': '後面暫時沒有更多橫屏劇',
     'ui.landscapeSkipLimit': '連續多部都是豎屏劇，繼續播放本劇',
+    'ui.episodeBadge': '第 {episode} 集',
 "ui.firstRecommendation": "已經是第一條推薦",
   "ui.recommendationRetry": "推薦加載失敗，請再按向下重試",
   "ui.allRecommendations": "已瀏覽全部推薦",

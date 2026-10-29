@@ -718,6 +718,7 @@
     'ui.landscapeSkipped': '竖屏剧已跳过，自动播放横屏剧',
     'ui.landscapeNoNext': '后面暂时没有更多横屏剧',
     'ui.landscapeSkipLimit': '连续多部都是竖屏剧，继续播放本剧',
+    'ui.episodeBadge': '第 {episode} 集',
     'ui.firstRecommendation': '已经是第一条推荐',
     'ui.recommendationRetry': '推荐加载失败，请再按向下重试',
     'ui.allRecommendations': '已浏览全部推荐',

@@ -2580,6 +2580,7 @@
   }
   function updatePlaybackControls() {
     var video = document.getElementById('hero-video');
+    if (video && !video.paused && !video.ended) hideEpisodeTransition();
     var duration = Number.isFinite(video.duration) ? video.duration : 0;
     var position = Math.min(duration, Number(video.currentTime) || 0);
     var progress = document.getElementById('control-progress');
@@ -3067,6 +3068,12 @@
       else goFocus(firstContentFocus());
       if (immersiveMode()) openSidebarMenu();
       else goFocus(activeSidebar());
+    }
+    else if (pageMode() === 'recommend' && playerReturnPage) {
+      // The drama was entered from another page (history/search/...): the
+      // first back returns there, after which the normal home flows apply.
+      leavePlayer();
+      return true;
     }
     else if (shell.classList.contains('is-cinema') && pageMode() === 'recommend') {
       // Auto-cleared screen is the normal playback state; back just shows
@@ -4990,10 +4997,41 @@
     var state = document.getElementById('landscape-state');
     if (state) state.textContent = uiText('settings.landscapeState', '跳过只发生在自动连播，手动点开的剧不受影响。');
   }
+  // Official-style transition: a cover card fades over the player while the
+  // next episode or drama loads, hiding the decoder's black gap entirely.
+  var episodeTransitionTimer = 0;
+  function showEpisodeTransition(item, episode) {
+    var card = document.getElementById('episode-transition');
+    if (!card || !card.querySelector || !item) return;
+    var img = card.querySelector('.episode-transition-cover');
+    var cover = item.cover || item.cover_fallback || '';
+    if (img) {
+      if (cover) { img.src = cover; img.classList.remove('is-hidden'); }
+      else { img.removeAttribute('src'); img.classList.add('is-hidden'); }
+    }
+    var title = card.querySelector('.episode-transition-title');
+    var sub = card.querySelector('.episode-transition-sub');
+    if (title) title.textContent = item.title || '';
+    if (sub) sub.textContent = uiText('ui.episodeBadge', '第 {episode} 集', { episode: episode || 1 });
+    card.classList.remove('is-hidden');
+    if (window.requestAnimationFrame) window.requestAnimationFrame(function () { card.classList.add('is-visible'); });
+    else card.classList.add('is-visible');
+    if (episodeTransitionTimer) clearTimeout(episodeTransitionTimer);
+    episodeTransitionTimer = setTimeout(hideEpisodeTransition, 4500);
+  }
+  function hideEpisodeTransition() {
+    if (episodeTransitionTimer) { clearTimeout(episodeTransitionTimer); episodeTransitionTimer = 0; }
+    var card = document.getElementById('episode-transition');
+    if (!card || !card.classList || card.classList.contains('is-hidden')) return;
+    card.classList.remove('is-visible');
+    setTimeout(function () { card.classList.add('is-hidden'); }, 320);
+  }
+
   function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint, recovery) {
     var autoChain = autoEnterChain;
     autoEnterChain = 0;
     closePlayerOptions(false);
+    if (feedItems[index] && !recovery) showEpisodeTransition(feedItems[index], forcedEpisode || (feedItems[index].start_episode || 1));
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
     if (index < 0) { showNotice(uiText('ui.firstRecommendation', '已经是第一条推荐')); return; }
@@ -5298,40 +5336,54 @@
     var launchFromCard = shouldAutoCinemaForLaunch(pageMode(), returnFocus, startOptions);
     if (typeof notificationHidePopup === 'function') notificationHidePopup();
     var recommendation = rememberRecommendation();
-    allPagers.forEach(function (pager) { pager.cancel(); });
-    if (!isPlaybackPage()) resetPlayerUI();
-    if (pageMode() !== 'player') {
+    if (pageMode() !== 'recommend') {
       playerReturnPage = pageMode();
       playerReturnFocus = returnFocus || document.activeElement;
+      // Switch to the shared playback surface without touching the feed:
+      // loadCatalog/restore would race the insertion below, and the in-memory
+      // feed is exactly the context the unified flow needs.
+      document.querySelectorAll('.side-item').forEach(function (node) { node.classList.toggle('is-active', node.dataset.page === 'recommend'); });
+      shell.dataset.mode = 'recommend';
+      mainSurface.classList.remove('has-search', 'has-placeholder', 'has-workspace');
+      hideWorkspacePages();
+      searchPage.classList.add('is-hidden');
+      pagePlaceholder.classList.add('is-hidden');
+      document.getElementById('hero').classList.add('is-feed');
+      document.getElementById('page-context').textContent = uiText('nav.recommend', '推荐');
     }
-    shell.dataset.mode = 'player';
-    shell.classList.add('is-player');
-    if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
-    document.getElementById('page-context').disabled = false;
-    mainSurface.classList.remove('has-search', 'has-placeholder', 'has-workspace');
-    hideWorkspacePages();
-    searchPage.classList.add('is-hidden');
-    pagePlaceholder.classList.add('is-hidden');
-    document.getElementById('page-context').textContent = uiText('ui.back', '← 返回');
-    document.getElementById('hero').classList.add('is-feed');
-    feedItems = [item];
-    feedIndex = 0;
+    // Locate the drama inside the unified feed, or slot it in right after
+    // the drama currently playing so the episode chain continues from here.
+    var existing = -1;
+    for (var i = 0; i < feedItems.length; i++) {
+      if (String(feedItems[i].series_id) === String(item.series_id)) { existing = i; break; }
+    }
+    if (existing < 0) {
+      var insertAt = feedIndex >= 0 && feedIndex < feedItems.length ? feedIndex + 1 : feedItems.length;
+      feedItems.splice(insertAt, 0, item);
+      existing = insertAt;
+    }
+    updateFeedCounter();
     cancelPendingAutoCinema();
     playbackMenuHintCandidate = menuHintCandidate;
     autoCinemaCandidate = autoCinemaEnabled && launchFromCard;
-    playFeedItem(0, item.__explicitEpisode ? item.start_episode : undefined, item.__explicitEpisode ? 0 : undefined);
+    playFeedItem(existing, item.__explicitEpisode ? item.start_episode : undefined, item.__explicitEpisode ? 0 : undefined);
     if (autoCinemaCandidate) autoCinemaGeneration = feedGeneration;
     if (recommendation) settleRecommendationSave(recommendation, libraryQueue);
     goFocus(document.getElementById('hero-feed-focus'));
   }
 
   function leavePlayer() {
-    var page = playerReturnPage || 'search';
+    var page = playerReturnPage;
     var target = playerReturnFocus;
     playerReturnPage = null;
     playerReturnFocus = null;
+    if (!page) {
+      // The playback surface is already home (a replay of the current
+      // recommendation): just hand focus back.
+      goFocus(firstContentFocus());
+      return;
+    }
     var item = document.querySelector('.side-item[data-page="' + page + '"]');
-    if (!item) item = document.querySelector('.side-item[data-page="recommend"]');
     if (item) activatePage(item, true);
     if (pageMode() === 'recommend') goFocus(firstContentFocus());
     else if (target && document.contains(target)) goFocus(target);

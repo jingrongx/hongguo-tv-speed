@@ -84,7 +84,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
   ` + slice('resumeEpisode', 'clockText') + slice('changeLibrary', 'toggleSaved') +
     slice('recommendationChannel', 'showRecommendationPlaceholder') + slice('saveProgress', 'continueAfterEpisode') +
     slice('recoverPlaybackPreparation', 'clearRangeTransitionHint') +
-    `var autoEnterChain=0,landscapeAutoOnly=true;function softDecodeFlag(){return '';}` +
+    `var autoEnterChain=0,landscapeAutoOnly=true;function softDecodeFlag(){return '';}function showEpisodeTransition(){}function hideEpisodeTransition(){}var episodeTransitionTimer=0;` +
     slice('playFeedItem', 'posterSeasonLabel') + slice('loadCatalog', 'seriesMessage') +
     source.slice(source.indexOf('  function activatePage('), source.indexOf("  document.addEventListener('keydown', handleKey")), c);
   return { c, calls, video, channel, state, async flush() { for (let i = 0; i < 6; i++) await tick(); }, entry(episode, position, extra = {}) {
@@ -100,11 +100,16 @@ test('leaving and returning restores the list, index, episode and position witho
   assert.equal(f.calls.filter(x => x.kind === 'recommend').length, 0);
   assert.equal(f.c.document.activeElement, f.channel);
 });
-test('another-page single-drama playback cannot overwrite the recommendation list or move its current slot', async () => {
+test('another-page entry joins the unified feed right after the current drama, keeping the recommendation list', async () => {
   const f = fixture(); f.c.activatePage(f.c.pages.search); await f.flush();
   f.c.startPlayer({ series_id: 'other', title: 'Other', vid: 'other-1', episode_count: 3 }); await f.flush();
-  f.c.activePlayback.started = true; f.video.currentTime = 8; f.c.activatePage(f.c.pages.recommend); await f.flush();
-  assert.equal(f.c.feedItems[f.c.feedIndex].series_id, 'r1'); assert.equal(f.c.activePlayback.episode, 2); assert.equal(f.c.activePlayback.position, 39);
+  assert.equal(f.c.pageMode(), 'recommend');
+  assert.equal(f.c.feedItems[f.c.feedIndex].series_id, 'other');
+  assert.equal(f.c.feedItems[1].series_id, 'r1');
+  assert.equal(f.c.feedItems[3].series_id, 'r2');
+  assert.equal(f.c.activePlayback.item.series_id, 'other');
+  f.c.activatePage(f.c.pages.recommend); await f.flush();
+  assert.equal(f.c.feedItems[f.c.feedIndex].series_id, 'other');
 });
 test('the newest progress of the same drama takes precedence, including intentionally replaying an earlier episode', async () => {
   for (const episode of [1, 3]) {
@@ -146,7 +151,7 @@ test('selecting the already open recommendation sidebar does not reset playback 
   assert.equal(f.c.activePlayback, original); assert.equal(f.video.currentTime, 39); assert.equal(f.calls.length, 0);
   assert.equal(f.c.document.activeElement, f.channel);
 });
-test('returning from the single-drama player to recommendation restores channel focus instead of its previous video focus', async () => {
+test('replaying the current recommendation keeps the playback surface home and restores channel focus', async () => {
   const f = fixture(); f.c.startPlayer(f.c.feedItems[1], f.c.document.getElementById('hero-feed-focus')); await f.flush();
   f.c.leavePlayer(); await f.flush();
   assert.equal(f.c.pageMode(), 'recommend'); assert.equal(f.c.document.activeElement, f.channel);
