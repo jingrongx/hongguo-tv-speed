@@ -73,9 +73,9 @@ jobs:
           test -n "$VERSION" && test -n "$CODE"
           # Anchored replacements: a loose "versionCode [0-9]*" would also hit
           # the flavor's "versionCode mpvVersionCode" reference and corrupt it.
+          # The version code derives from appVersion inside build.gradle with
+          # the same formula this pipeline uses, so only the name needs pinning.
           sed -i "s/def appVersion = \".*\"/def appVersion = \"$VERSION\"/" android/app/build.gradle
-          sed -i "s/^            versionCode [0-9][0-9]*/            versionCode $CODE/" android/app/build.gradle
-          sed -i "s/def mpvVersionCode = [0-9][0-9]*/def mpvVersionCode = $CODE/" android/app/build.gradle
           grep -E "def appVersion|versionCode" android/app/build.gradle | head -3
 
       - name: Restore signing key

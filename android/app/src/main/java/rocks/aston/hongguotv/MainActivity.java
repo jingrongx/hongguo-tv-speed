@@ -140,6 +140,19 @@ public class MainActivity extends Activity {
             }
         });
         webView.addJavascriptInterface(appUpdater.new Bridge(), "HongguoTVUpdates");
+        // Clean app exit requested by the UI: the double-back gesture on the
+        // home surface and the sidebar's 退出应用 entry both land here. Stops
+        // the sticky core service first so the Go process does not linger.
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void exitApp() {
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) return;
+                    try { stopService(new Intent(MainActivity.this, CoreService.class)); } catch (Exception ignored) { }
+                    finishAndRemoveTask();
+                });
+            }
+        }, "HongguoTVApp");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {

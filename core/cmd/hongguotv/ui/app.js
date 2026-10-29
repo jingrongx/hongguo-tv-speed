@@ -432,7 +432,7 @@
     }
   });
   var applicationInBackground = false;
-  var playbackPreferences = { speed: 1, volume: 100, quality: '', danmaku: false };
+  var playbackPreferences = { speed: 1, volume: 100, quality: '', danmaku: false, loudness: true };
   var endRecommendationIndex = 0, endRecommendationAnimation = 0, endRecommendationReadyCleanup = null;
   var endRecommendations = HongguoEndRecommendations.create({
     isCurrent: function (playback) {
@@ -2031,12 +2031,61 @@
     hideControls();
     return true;
   }
+  // App exit: double-back on the initial home surface, or the sidebar's
+  // 退出应用 entry. Delegates to the native bridge which stops the core
+  // service and removes the task.
+  var exitBackArmed = 0;
+  function exitApplication() {
+    try { pauseForBackground(); } catch (error) { /* keep exiting */ }
+    var bridge = typeof window !== 'undefined' ? window.HongguoTVApp : null;
+    if (bridge && typeof bridge.exitApp === 'function') { bridge.exitApp(); return; }
+    showNotice(uiText('ui.exitUnsupported', '当前环境不支持在应用内退出'));
+  }
+  // First-launch quick guide: shown once, dismissed by any key press.
+  var onboardingOpen = false;
+  function showOnboardingOnce() {
+    var seen = false;
+    try { seen = window.localStorage.getItem('hongguo.onboarded') === '1'; }
+    catch (error) { seen = true; }
+    var overlay = document.getElementById('onboarding-overlay');
+    if (!overlay) return;
+    if (seen) { overlay.classList.add('is-hidden'); return; }
+    onboardingOpen = true;
+    overlay.classList.remove('is-hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+  function closeOnboarding() {
+    if (!onboardingOpen) return;
+    onboardingOpen = false;
+    var overlay = document.getElementById('onboarding-overlay');
+    if (overlay) { overlay.classList.add('is-hidden'); overlay.setAttribute('aria-hidden', 'true'); }
+    try { window.localStorage.setItem('hongguo.onboarded', '1'); }
+    catch (error) { /* Private-mode storage: guide reappears next launch. */ }
+  }
+  // Loudness normalization (MPV engine only): evens out volume across
+  // dramas. Applied at startup and whenever the setting changes.
+  function applyLoudnessNormalization() {
+    var bridge = typeof window !== 'undefined' ? window.HongguoNativePlayer : null;
+    if (bridge && typeof bridge.setLoudness === 'function') {
+      try { bridge.setLoudness(playbackPreferences.loudness !== false); } catch (error) { /* engine absent */ }
+    }
+  }
+  function renderLoudnessSettings() {
+    var toggle = document.getElementById('loudness-toggle');
+    if (!toggle) return;
+    var enabled = playbackPreferences.loudness !== false;
+    toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    toggle.textContent = uiText(enabled ? 'settings.loudnessEnabled' : 'settings.loudnessDisabled', enabled ? '已开启' : '已关闭');
+    var state = document.getElementById('loudness-state');
+    if (state) state.textContent = uiText('settings.loudnessState', '统一各剧响度，下次播放或切集时生效。');
+  }
   function toggleSidebarMenu() {
     if (sidebarMenuOpen) closeSidebarMenu(true);
     else openSidebarMenu();
   }
   function handleKey(event) {
     var key = normalizedKey(event);
+    if (onboardingOpen) { closeOnboarding(); event.preventDefault(); event.stopPropagation(); return; }
     if (key === 'Menu' && immersiveMode()) {
       // The remote's menu key reveals the playback control bar, where
       // 选集/选季/清晰度/倍速 live. The sidebar stays on the OK key.
@@ -2160,20 +2209,12 @@
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down' || direction === 'left' || direction === 'right')) {
       if (!event.repeat) {
         if (direction === 'left' || direction === 'right') switchPlayerEpisode(direction === 'left' ? -1 : 1);
-        else switchPlayerEpisode(direction === 'up' ? -1 : 1);
+        else switchRecommendation(direction === 'up' ? -1 : 1);
       }
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && immersiveMode() && zoneOf(current) === 'feed' && (direction === 'left' || direction === 'right')) {
       if (!event.repeat) switchPlayerEpisode(direction === 'left' ? -1 : 1);
-      event.preventDefault(); event.stopPropagation(); return;
-    }
-    if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen &&
-      (pageMode() === 'player' || pageMode() === 'recommend' && shell.classList.contains('is-cinema')) &&
-      zoneOf(current) === 'feed' && (direction === 'left' || direction === 'right') &&
-      (shell.classList.contains('is-cinema') || shell.classList.contains('is-controls-hidden'))) {
-      var seeked = seekBy(direction === 'left' ? -10 : 10, false);
-      if (!seeked) showNotice(uiText('ui.videoReadySeek', '视频准备好后才能快进或后退'));
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (isPlaybackPage() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && (direction !== 'left' || shell.classList.contains('is-cinema') || zoneOf(current) !== 'feed')) revealControls();
@@ -2584,6 +2625,7 @@
       var saved = JSON.parse(value || '{}');
       if (playbackSpeeds.indexOf(saved.speed) >= 0) playbackPreferences.speed = saved.speed;
       if (Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 100) playbackPreferences.volume = saved.volume;
+      playbackPreferences.loudness = saved.loudness !== false;
       if (/^[1-9][0-9]{2,3}P$/.test(saved.quality || '')) playbackPreferences.quality = saved.quality;
       danmakuEnabled = saved.danmaku === true; playbackPreferences.danmaku = danmakuEnabled;
     } catch (error) { /* Invalid preferences fall back to normal playback. */ }
@@ -3024,12 +3066,22 @@
       else goFocus(activeSidebar());
     }
     else if (shell.classList.contains('is-cinema')) {
-      exitCinema(false);
+      // Auto-cleared screen is the normal playback state; back just shows
+      // the control bar. Exits happen via the double-back gesture below.
       revealControls();
-      goFocus(activeSidebar());
+      goFocus(document.querySelector('.hero-feed-focus') || firstContentFocus());
     }
     else if (isPlaybackPage() && zoneOf(current) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
     else if (pageMode() === 'player') leavePlayer();
+    else if (pageMode() === 'recommend' && !shell.classList.contains('is-cinema')) {
+      // Initial home surface: double-back exits. The first press tells the
+      // user what happened instead of doing something invisible.
+      var now = Date.now();
+      if (exitBackArmed && now - exitBackArmed < 2400) { exitApplication(); return true; }
+      exitBackArmed = now;
+      showNotice(uiText('ui.exitBackHint', '再按一次返回键退出应用'));
+      return true;
+    }
     else if (zoneOf(current) !== 'sidebar') goFocus(activeSidebar());
     else return false;
     return true;
@@ -7447,6 +7499,7 @@
 
   document.querySelectorAll('.side-item').forEach(function (item) {
     item.addEventListener('click', function () {
+      if (item.dataset.page === 'exit') { closeSidebarMenu(false); exitApplication(); return; }
       activatePage(item);
       if (immersiveMode()) closeSidebarMenu(false);
       if (item.dataset.page === 'recommend') goFocus(firstContentFocus());
@@ -8295,6 +8348,19 @@
   renderLandscapeSettings();
   applySidebarMode();
   renderSidebarModeSettings();
+  var loudnessToggle = document.getElementById('loudness-toggle');
+  if (loudnessToggle) {
+    loudnessToggle.addEventListener('click', function () {
+      playbackPreferences.loudness = playbackPreferences.loudness === false;
+      savePlaybackPreferences();
+      applyLoudnessNormalization();
+      renderLoudnessSettings();
+      showNotice(uiText(playbackPreferences.loudness !== false ? 'settings.loudnessOn' : 'settings.loudnessOff', playbackPreferences.loudness !== false ? '已开启音量均衡' : '已关闭音量均衡'));
+    });
+  }
+  renderLoudnessSettings();
+  applyLoudnessNormalization();
+  showOnboardingOnce();
   var landscapeToggle = document.getElementById('landscape-toggle');
   if (landscapeToggle) {
     landscapeToggle.addEventListener('click', function () {

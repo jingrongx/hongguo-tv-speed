@@ -23,6 +23,8 @@ function keyboard() {
     var moved=[],focused=[],clicks=0,backs=0,searches=0,played=[],notices=[];
     var activePlayback=null,playbackRequest=null,feedItems=[],feedIndex=0,featuredItem=null;
     function playFeedItem(index,episode,position){played.push([index,episode,position])}
+    function switchRecommendation(step){played.push(['drama',step])}
+    function switchPlayerEpisode(step,fromWheel){played.push(['episode',step])}
     function showNotice(message){notices.push(message)}
     document.getElementById=function(id){return {id:id}}
     function pageMode(){return 'search'}
@@ -154,8 +156,8 @@ test('single-player feed arrows switch episodes while recommendation arrows stay
   `,c);
   c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
   c.handleKey({keyCode:40,preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[[0,3,0],[0,5,0]]);
-  assert.deepEqual(Array.from(c.focused),['hero-feed-focus','hero-feed-focus']);
+  assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['drama',-1],['drama',1]]);
+  assert.deepEqual(Array.from(c.focused),[]);
 
   vm.runInContext(`pageMode=function(){return 'recommend'}; played=[]; focused=[];`,c);
   vm.runInContext(`switchRecommendation=function(step){played.push(['recommend',step])}`,c);
@@ -188,13 +190,13 @@ test('single-player episode switching consumes held arrows and reports season bo
     activePlayback={episode:1,item:{series_id:'series-1',episode_count:3}};
     feedItems=[activePlayback.item]; feedIndex=0; played=[]; notices=[];
   `,c);
-  c.handleKey({keyCode:38,preventDefault(){},stopPropagation(){}});
-  c.handleKey({keyCode:40,repeat:true,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:39,repeat:true,preventDefault(){},stopPropagation(){}});
   assert.deepEqual(Array.from(c.played),[]);
   assert.deepEqual(Array.from(c.notices),['已经是第一集']);
 
   vm.runInContext(`activePlayback.episode=3; notices=[];`,c);
-  c.handleKey({keyCode:40,preventDefault(){},stopPropagation(){}});
+  c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
   assert.deepEqual(Array.from(c.played),[]);
   assert.deepEqual(Array.from(c.notices),['已经是本季最后一集']);
 });
@@ -219,7 +221,7 @@ test('single-player feed steps episodes on left/right; immersive recommendation 
     pageMode=function(){return 'player'};
     zoneOf=function(){return 'feed'};
     isPlaybackPage=function(){return true};
-    switchPlayerEpisode=function(step,fromWheel){played.push(['episode',step])};
+    switchPlayerEpisode=function(step){played.push(['episode',step])};
     shellState['is-controls-hidden']=true;
   `,c);
   c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
@@ -227,13 +229,13 @@ test('single-player feed steps episodes on left/right; immersive recommendation 
   assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['episode',-1],['episode',1]]);
   assert.deepEqual(Array.from(c.focused),[]);
 
-  vm.runInContext(`shellState['is-controls-hidden']=false; shellState['is-cinema']=false; played=[]`,c);
+  vm.runInContext(`shellState['is-controls-hidden']=false; shellState['is-cinema']=false; played=[]; switchPlayerEpisode=function(step){played.push(['episode',step])}`,c);
   c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
   c.handleKey({keyCode:39,preventDefault(){},stopPropagation(){}});
   assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['episode',-1],['episode',1]]);
   assert.deepEqual(Array.from(c.focused),[]);
 
-  vm.runInContext(`pageMode=function(){return 'recommend'}; played=[]; immersiveMode=function(){return true}; sidebarMenuOpen=false; detailModalOpen=false; playerOptionsOpen=false; confirmOpen=false; discussionOpen=false`,c);
+  vm.runInContext(`pageMode=function(){return 'recommend'}; played=[]; immersiveMode=function(){return true}; sidebarMenuOpen=false; detailModalOpen=false; playerOptionsOpen=false; confirmOpen=false; discussionOpen=false; switchPlayerEpisode=function(step){played.push(['episode',step])}`,c);
   c.handleKey({keyCode:37,preventDefault(){},stopPropagation(){}});
   assert.deepEqual(JSON.parse(JSON.stringify(Array.from(c.played))),[['episode',-1]]);
 });

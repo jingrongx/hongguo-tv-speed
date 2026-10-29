@@ -41,6 +41,9 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private long surfaceEpoch, stopSurfaceEpoch = -1;
     private double volume = 1, speed = 1;
     private boolean muted = true;
+    // Levels of different dramas vary widely; dynaudnorm evens them out in
+    // real time without a two-pass analysis. Off switches back to raw audio.
+    private volatile boolean loudness = true;
     private float left, top, width, height;
     private volatile String diagnostic = "{\"engine\":\"mpv\"}";
 
@@ -213,6 +216,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             active.setPropertyBoolean("mute", muted);
             active.setPropertyDouble("volume", volume * 100);
             active.setPropertyDouble("speed", speed);
+            active.setPropertyString("af", loudness ? "dynaudnorm" : "");
             // Match MiniReel's open(play: false): a new source must not emit
             // audio while its demuxer and video output are being replaced.
             // FILE_LOADED below is the only point at which the play intent is
@@ -499,6 +503,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (!finite(value)) return;
         handler.post(() -> { volume = Math.max(0, Math.min(1, value)); muted = silent;
             Session s = session; if (s != null) guarded(s, () -> { if (s.player != null) { s.player.setPropertyDouble("volume", volume * 100); s.player.setPropertyBoolean("mute", muted); } });
+        });
+    }
+    @JavascriptInterface public void setLoudness(boolean enabled) {
+        handler.post(() -> { loudness = enabled;
+            Session s = session; if (s != null) guarded(s, () -> { if (s.player != null) s.player.setPropertyString("af", enabled ? "dynaudnorm" : ""); });
         });
     }
     @JavascriptInterface public void seekTo(double seconds) {

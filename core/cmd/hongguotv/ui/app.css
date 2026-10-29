@@ -283,6 +283,13 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 .player-options { position: absolute; z-index: 9; right: 28px; bottom: 132px; width: 320px; padding: 18px; color: #fff; background: #22232c; border: 1px solid #454652; border-radius: 14px; box-shadow: 0 8px 35px rgba(0,0,0,.5); }
 .playback-command-menu { position: fixed; z-index: 70; top: 0; right: 0; bottom: 0; left: auto; display: flex; align-items: stretch; justify-content: flex-end; width: 320px; min-width: 320px; max-width: 320px; padding: 0; box-sizing: border-box; background: transparent; }
 .playback-menu-hint { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(0,0,0,.48); pointer-events: none; }
+.onboarding-overlay { position: fixed; z-index: 90; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(0,0,0,.72); }
+.onboarding-card { width: 100%; max-width: 700px; max-height: 92vh; overflow: auto; padding: 26px 30px 22px; box-sizing: border-box; color: #fff; background: rgba(16,17,23,.94); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; box-shadow: 0 14px 44px rgba(0,0,0,.5); }
+.onboarding-title { margin: 0 0 14px; color: #f0f0f5; font-size: 22px; font-weight: 600; }
+.onboarding-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+.onboarding-list li { display: flex; align-items: baseline; gap: 14px; color: #c9c9d4; font-size: 15px; }
+.onboarding-list strong { flex: 0 0 76px; color: #5b9dff; font-size: 15px; text-align: right; }
+.onboarding-foot { margin: 18px 0 0; color: #8f8f9c; font-size: 13px; text-align: center; }
 .playback-menu-hint-card { display: flex; width: 100%; max-width: 760px; max-height: 92vh; flex-direction: column; align-items: center; overflow: auto; padding: 12px 14px 16px; box-sizing: border-box; color: #fff; background: rgba(20,21,26,.82); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; box-shadow: 0 12px 38px rgba(0,0,0,.42); }
 .playback-menu-hint-graphic { position: relative; flex: 0 0 auto; width: 100%; max-width: 680px; line-height: 0; }
 .playback-menu-hint-graphic img { display: block; width: 100%; height: auto; }

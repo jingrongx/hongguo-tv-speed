@@ -2,8 +2,10 @@ plugins {
     id "com.android.application"
 }
 
-def appVersion = "0.2.141"
-def mpvVersionCode = 92
+def appVersion = "0.2.142"
+// Same formula as the release pipeline: major*10000 + minor*100 + patch,
+// so a locally built APK always upgrades cleanly over a CI-built one.
+def computedVersionCode = appVersion.tokenize('.').withIndex().collect { part, i -> (part as int) * (i == 0 ? 10000 : i == 1 ? 100 : 1) }.sum()
 def coreVersion = System.getenv("HONGGUO_CORE_VERSION") ?: "${appVersion}-dev"
 // Local release signing reads android/keystore.properties (never committed).
 // CI keeps the environment-variable path.
@@ -29,7 +31,7 @@ android {
         applicationId "com.jingrongx.hongguotv"
         minSdk 23
         targetSdk 35
-        versionCode 140
+        versionCode computedVersionCode
         versionName appVersion
         buildConfigField "String", "CORE_VERSION", "\"${coreVersion}\""
         ndk {
@@ -48,7 +50,7 @@ android {
             dimension "player"
             applicationIdSuffix ".mpv"
             minSdk 23
-            versionCode mpvVersionCode
+            versionCode computedVersionCode
             resValue "string", "app_name", "红果短剧"
             buildConfigField "String", "VARIANT_ID", '"mpv"'
             buildConfigField "String", "PLAYER_ENGINE", '"mpv"'

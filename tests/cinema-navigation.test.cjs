@@ -63,7 +63,8 @@ test('Back exits sidebar-free playback, reveals controls and focuses the active 
       detailModalOpen: false,
       discussionOpen: false,
       accountData: null,
-      document: { activeElement: { id: 'player-control' } },
+      document: { activeElement: { id: 'player-control' }, querySelector: () => null },
+      firstContentFocus: () => ({ id: 'content-fallback' }),
       shell: { classList: { contains: name => name === 'is-cinema' ? state.cinema : name === 'is-controls-hidden' ? state.hidden : false } },
       pageMode: () => 'player',
       isPlaybackPage: () => true,
@@ -79,10 +80,11 @@ test('Back exits sidebar-free playback, reveals controls and focuses the active 
     vm.runInContext(slice('handleBack', 'handleMediaCommand'), c);
 
     assert.equal(c.handleBack(), true);
-    assert.equal(state.cinema, false);
+    // Auto-cleared screen stays on: back only surfaces the control bar and
+    // returns focus to the playing surface. Exiting is the double-back's job.
+    assert.equal(state.cinema, true);
     assert.equal(state.hidden, false);
-    assert.equal(state.focused, sidebar);
-    assert.deepEqual(calls, [['exit', false], 'reveal', ['focus', sidebar]]);
+    assert.deepEqual(calls, ['reveal', ['focus', { id: 'content-fallback' }]]);
   }
 });
 
