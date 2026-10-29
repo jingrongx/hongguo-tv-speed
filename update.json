@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 346,
+  "version_code": 347,
   "min_sdk": 23,
-  "version_name": "0.2.146",
+  "version_name": "0.2.147",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19192884,
-  "sha256": "f67929113ce93b31a75e029811e6104ece034f9a2a4acf8dbdabd1588197a44d",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.146/hongguo-tv-speed-0.2.146.apk",
+  "size": 19193721,
+  "sha256": "c212813fd0e9777a2d7dc0c1774a640d852ebd7f693c6647c0caa3741602b171",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.147/hongguo-tv-speed-0.2.147.apk",
   "release_notes": "极速版",
   "variant": "standard"
 }
