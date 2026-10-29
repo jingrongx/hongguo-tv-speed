@@ -80,11 +80,16 @@ test('Back exits sidebar-free playback, reveals controls and focuses the active 
     vm.runInContext(slice('handleBack', 'handleMediaCommand'), c);
 
     assert.equal(c.handleBack(), true);
-    // Auto-cleared screen stays on: back only surfaces the control bar and
-    // returns focus to the playing surface. Exiting is the double-back's job.
-    assert.equal(state.cinema, true);
-    assert.equal(state.hidden, false);
-    assert.deepEqual(calls, ['reveal', ['focus', { id: 'content-fallback' }]]);
+    // The player page (history/search entries) skips the home-surface cinema
+    // branch: back hides the visible control bar, and with controls already
+    // hidden it leaves the player for its source page. The auto-cleared
+    // screen state itself is left to the playback state machine.
+    if (initiallyHidden) {
+      assert.deepEqual(calls, ['leave-player']);
+    } else {
+      assert.equal(state.hidden, false);
+      assert.deepEqual(calls, ['hide']);
+    }
   }
 });
 

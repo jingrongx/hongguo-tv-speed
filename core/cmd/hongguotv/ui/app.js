@@ -2136,8 +2136,11 @@
     // OK on the playing video is the menu key in immersive mode: it opens
     // the translucent sidebar instead of toggling playback, matching the
     // official app. Inside the open menu, Enter confirms the focused item.
-    if (key === 'Enter' && immersiveMode() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen &&
-        current && zoneOf(current) === 'feed' && !sidebarMenuOpen) {
+    if (key === 'Enter' && immersiveMode() && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && !sidebarMenuOpen &&
+        isPlaybackPage() && (zoneOf(current) === 'feed' ||
+          (shell.classList.contains('is-controls-hidden') && zoneOf(current) !== 'controls' && zoneOf(current) !== 'sidebar'))) {
+      // OK summons the sidebar from any playing surface — the recommendation
+      // feed and the standalone player page (history/search entries) alike.
       openSidebarMenu();
       event.preventDefault(); event.stopPropagation(); return;
     }
@@ -3065,9 +3068,11 @@
       if (immersiveMode()) openSidebarMenu();
       else goFocus(activeSidebar());
     }
-    else if (shell.classList.contains('is-cinema')) {
+    else if (shell.classList.contains('is-cinema') && pageMode() === 'recommend') {
       // Auto-cleared screen is the normal playback state; back just shows
       // the control bar. Exits happen via the double-back gesture below.
+      // The player page (history/search entries) skips this branch so its
+      // own back flow — hide controls, then leavePlayer — stays reachable.
       revealControls();
       goFocus(document.querySelector('.hero-feed-focus') || firstContentFocus());
     }
