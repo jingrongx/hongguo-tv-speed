@@ -13,7 +13,7 @@ function fixture(mode = 'recommend', zone = 'channels') {
     clearTimeout: id => state.clear.push(id), setTimeout: (callback, delay) => { state.timers.push({ callback, delay }); return 2; },
     shell: { classList: { contains: () => state.hidden } },
     lastPageFocus: { recommend: feed, search: input }, searchInput: input,
-    detailModalOpen: false, confirmOpen: false, playerOptionsOpen: false, discussionOpen: false,
+    detailModalOpen: false, confirmOpen: false, playerOptionsOpen: false, discussionOpen: false, sidebarMenuOpen: false,
     controlsTimer: 1,
     pageMode: () => state.mode, isPlaybackPage: () => ['recommend', 'player'].includes(state.mode),
     zoneOf: () => state.zone, activeChannel: () => channel, focusables: () => [feed, input],

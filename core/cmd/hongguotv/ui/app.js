@@ -1474,6 +1474,13 @@
     if (zone === 'sidebar') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction);
       if (direction === 'right') {
+        // Inside the control center the right key crosses to the playback
+        // control bar (pause first), the counterpart of the bar's own
+        // left-arrow hop back into the menu.
+        if (sidebarMenuOpen) {
+          var centerControl = firstVisible('.playback-buttons .control-button');
+          if (centerControl) return centerControl;
+        }
         // While a video actually plays on the recommendation page, the
         // channel banner is a dead end for remote users: the complaint was
         // right-key then two downs just to switch drama. Land on the video
@@ -2005,15 +2012,25 @@
     if (!immersiveMode() || sidebarMenuOpen) return;
     sidebarMenuOpen = true;
     shell.classList.add('sidebar-open');
+    // One control center: the sidebar and the playback control bar show
+    // together, so OK and the menu key are interchangeable and neither menu
+    // has to be dismissed before reaching the other. Pause gets focus first
+    // (the most frequent action); left moves into the menu.
+    revealControls();
     armSidebarIdle();
     // goFocus rejects elements that still compute as visibility:hidden, so
     // wait until the just-added overlay class has been applied before
-    // moving focus into the menu.
+    // moving focus into the control center.
+    var settle = function () {
+      if (!sidebarMenuOpen) return;
+      var pause = firstVisible('.playback-buttons .control-button');
+      goFocus(pause || activeSidebar());
+    };
     if (window.requestAnimationFrame) {
       window.requestAnimationFrame(function () {
-        window.requestAnimationFrame(function () { if (sidebarMenuOpen) goFocus(activeSidebar()); });
+        window.requestAnimationFrame(settle);
       });
-    } else goFocus(activeSidebar());
+    } else settle();
   }
   function closeSidebarMenu(refocus) {
     if (sidebarMenuTimer) { clearTimeout(sidebarMenuTimer); sidebarMenuTimer = 0; }
@@ -2021,6 +2038,8 @@
     sidebarMenuOpen = false;
     shell.classList.remove('sidebar-open');
     if (refocus) goFocus(document.querySelector('.hero-feed-focus') || firstContentFocus());
+    // The control bar belongs to the control center: it leaves with it.
+    hideControls();
   }
   function togglePlaybackControls() {
     if (shell.classList.contains('is-controls-hidden')) {
@@ -2087,12 +2106,9 @@
     var key = normalizedKey(event);
     if (onboardingOpen) { closeOnboarding(); event.preventDefault(); event.stopPropagation(); return; }
     if (key === 'Menu' && immersiveMode()) {
-      // The remote's menu key reveals the playback control bar, where
-      // 选集/选季/清晰度/倍速 live. The sidebar stays on the OK key.
-      if (shell.classList.contains('is-controls-hidden')) {
-        revealControls();
-        goFocus(firstVisible('.playback-buttons .control-button'));
-      } else hideControls();
+      // The menu key is interchangeable with OK: both toggle the control
+      // center (translucent sidebar + playback control bar together).
+      toggleSidebarMenu();
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (sidebarMenuOpen) armSidebarIdle();
@@ -2498,7 +2514,7 @@
   function scheduleControlsHide() {
     clearTimeout(controlsTimer);
     var video = document.getElementById('hero-video');
-    if (!isPlaybackPage() || (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) || shell.classList.contains('is-controls-hidden') || video.paused || video.ended || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
+    if (!isPlaybackPage() || (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) || shell.classList.contains('is-controls-hidden') || sidebarMenuOpen || video.paused || video.ended || detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen || playerOptionsOpen || discussionOpen || ['sidebar', 'channels'].indexOf(zoneOf(document.activeElement)) >= 0) return;
     controlsTimer = setTimeout(function () { hideControls(); }, 6000);
   }
   function revealControls() {
@@ -3187,7 +3203,7 @@
     startPlayer({ series_id: program.series_id, title: program.title, intro: '', cover: '' }, null, { cardLaunch: !!program.cardLaunch });
   }
   window.HongguoTV = { prepareExit: function () { pauseForBackground(); return libraryQueue.catch(function () {}); }, remoteKey: remoteKey, requestBack: handleBack, mediaCommand: handleMediaCommand,
-    togglePlaybackCommandMenu: function () { if (immersiveMode()) return togglePlaybackControls(); return togglePlaybackCommandMenu(); }, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
+    togglePlaybackCommandMenu: function () { if (immersiveMode()) return toggleSidebarMenu(); return togglePlaybackCommandMenu(); }, pauseForBackground: pauseForBackground, resumeFromBackground: resumeFromBackground, desktopFullscreenChanged: desktopFullscreenChanged, canShowAppUpdate: canShowAppUpdate, finishAccountEditing: function () {}, finishSearchEditing: function () { var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement; if (current === searchInput) goFocus(searchSuggestionOpen ? firstVisible('.search-suggestion') || firstSearchAction() || firstSearchFilter() : firstSearchAction() || firstSearchFilter()); }, openHomeProgram: openHomeProgram };
 
   function isLibraryPage() { return ['history', 'favorites', 'likes'].indexOf(pageMode()) >= 0; }
   function libraryEntry(id) { return libraryData.entries.filter(function (entry) { return entry.drama.series_id === id; })[0] || null; }
