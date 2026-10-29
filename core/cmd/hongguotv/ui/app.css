@@ -23,6 +23,8 @@ button:focus { outline: none; }
 /* Immersive TV mode: translucent overlay sidebar, opened with the remote's
    menu or OK key, auto-hidden while playback fills the whole screen. */
 .app-shell.immersive { position: relative; }
+.app-shell.immersive .sidebar { display: none; }
+.app-shell.immersive.sidebar-open .sidebar { display: none; }
 .app-shell.immersive .sidebar {
   position: absolute; left: 0; top: 0; bottom: 0; z-index: 70; flex-basis: 224px; width: 224px;
   background: rgba(10, 10, 15, .88);
@@ -290,6 +292,37 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 .onboarding-list li { display: flex; align-items: baseline; gap: 14px; color: #c9c9d4; font-size: 15px; }
 .onboarding-list strong { flex: 0 0 76px; color: #5b9dff; font-size: 15px; text-align: right; }
 .onboarding-foot { margin: 18px 0 0; color: #8f8f9c; font-size: 13px; text-align: center; }
+/* ---- Control center: five-dial main panel -----------------------------
+   The bottom panel is the single control surface: navigation dials (left),
+   playback dials (center), and a "more" grid behind the last dial. The old
+   full-height sidebar overlay is gone in immersive mode. */
+.app-shell.immersive .sidebar { display: none; }
+.bottom-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 14; box-sizing: border-box; padding: 14px 28px 12px; background: rgba(9,10,15,.9); border-top: 1px solid rgba(255,255,255,.08); }
+.playback-buttons { display: flex; align-items: flex-start; justify-content: center; gap: 56px; min-width: 0; padding: 6px 0 2px; }
+.dial-button { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 84px; padding: 0; background: none; border: 0; color: inherit; cursor: pointer; }
+.dial-icon { display: flex; align-items: center; justify-content: center; width: 62px; height: 62px; border-radius: 50%; background: #191a22; border: 1.4px solid #4a4b56; transition: transform .12s ease, border-color .12s ease, background .12s ease; }
+.dial-icon svg { width: 26px; height: 26px; fill: none; stroke: #c9c9d2; stroke-width: 1.7; }
+.dial-label { font-size: 13px; color: #c9c9d2; }
+.dial-button.dial-primary .dial-icon { width: 68px; height: 68px; background: #eef2fa; border-color: #ffffff; }
+.dial-button.dial-primary .dial-icon svg { stroke: #1c2a44; }
+.dial-button.dial-primary .dial-label { color: #ffffff; }
+.dial-button.is-focused .dial-icon, .dial-button:focus .dial-icon { transform: scale(1.1); border-color: #ffffff; background: #23242e; }
+.dial-button.is-focused .dial-label, .dial-button:focus .dial-label { color: #ffffff; }
+.dial-button.dial-primary.is-focused .dial-icon { background: #ffffff; }
+
+/* ---- "More" second-level grid panel ----------------------------------- */
+.more-panel { position: absolute; z-index: 15; left: 0; right: 0; bottom: 0; box-sizing: border-box; padding: 18px 32px 20px; background: rgba(9,10,15,.94); border-top: 1px solid rgba(255,255,255,.08); opacity: 0; transform: translateY(14px); transition: opacity .16s ease, transform .16s ease; pointer-events: none; }
+.more-panel.is-visible { opacity: 1; transform: none; pointer-events: auto; }
+.more-panel.is-hidden { display: none; }
+.more-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; max-width: 900px; margin: 0 auto; }
+.more-tile { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 0 10px; background: #191a22; border: 1.4px solid #4a4b56; border-radius: 10px; color: inherit; cursor: pointer; }
+.tile-icon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; }
+.tile-icon svg { width: 24px; height: 24px; fill: none; stroke: #c9c9d2; stroke-width: 1.6; }
+.tile-label { font-size: 12px; color: #c9c9d2; }
+.more-tile.is-focused, .more-tile:focus { border-color: #ffffff; background: #23242e; transform: scale(1.04); }
+.more-tile.is-focused .tile-label, .more-tile:focus .tile-label { color: #ffffff; }
+.more-utilities { display: flex; align-items: center; justify-content: center; gap: 18px; max-width: 900px; margin: 14px auto 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.07); }
+
 /* Official-style episode transition: a cover card fades in over the player
    while the next episode loads, so the decoder's black gap is never seen. */
 .episode-transition { position: absolute; z-index: 12; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: flex-end; box-sizing: border-box; padding: 40px; overflow: hidden; background: #08090d; opacity: 0; transition: opacity .3s ease; pointer-events: none; }

@@ -21,6 +21,13 @@ func coreListener(port int, instanceID string, ready io.Writer) (net.Listener, e
 		return nil, errors.New("invalid local runtime configuration")
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil && port > 0 {
+		// The stable port is what keeps the WebView origin — and with it the
+		// local resume snapshot, vertical-drama memory and settings — alive
+		// across restarts. Only a genuinely taken port falls back to an
+		// ephemeral one (the handshake below still reports the real port).
+		listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	}
 	if err != nil {
 		return nil, err
 	}

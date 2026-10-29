@@ -84,7 +84,10 @@ public class CoreService extends Service {
                 return;
             }
             String instanceId = UUID.randomUUID().toString();
-            ProcessBuilder builder = new ProcessBuilder(binary.getAbsolutePath(), "-port", "0",
+            // A stable port keeps the WebView origin identical across
+            // restarts; the child falls back to an ephemeral port only when
+            // this one is genuinely taken, and reports the real port anyway.
+            ProcessBuilder builder = new ProcessBuilder(binary.getAbsolutePath(), "-port", "24568",
                     "-instance-id", instanceId, "-parent-pid", String.valueOf(android.os.Process.myPid()))
                     .redirectErrorStream(true);
             // Android may expose /data/local/tmp as os.TempDir to the native

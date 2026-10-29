@@ -11,7 +11,8 @@
     feed: '.hero-feed-focus',
     catalog: '.catalog-card',
     actions: '.round-action',
-    controls: '.playback-buttons .control-button, #player-retry, #player-failure-diagnostics',
+    controls: '.playback-buttons .dial-button, #player-retry, #player-failure-diagnostics',
+    more: '#more-panel .more-tile',
     timeline: '#control-progress',
     searchInput: '#search-input',
     searchSuggestions: '.search-suggestion',
@@ -1101,7 +1102,9 @@
     if (element.classList.contains('catalog-card')) return 'catalog';
     if (element.classList.contains('round-action')) return 'actions';
     if (element.id === 'control-progress') return 'timeline';
+    if (element.closest && element.closest('#more-panel')) return 'more';
     if (element.classList.contains('control-button')) return 'controls';
+    if (element.classList.contains('dial-button')) return 'controls';
     if (element.id === 'search-input') return 'searchInput';
     if (element.classList.contains('search-action')) return 'searchActions';
     if (element.classList.contains('filter-toggle')) return 'searchFilters';
@@ -1478,7 +1481,7 @@
         // control bar (pause first), the counterpart of the bar's own
         // left-arrow hop back into the menu.
         if (sidebarMenuOpen) {
-          var centerControl = firstVisible('.playback-buttons .control-button');
+          var centerControl = firstVisible('.playback-buttons .dial-button');
           if (centerControl) return centerControl;
         }
         // While a video actually plays on the recommendation page, the
@@ -1503,15 +1506,15 @@
       return null;
     }
     if (zone === 'feed') {
-      if (direction === 'left') return shell.classList.contains('is-cinema') ? firstVisible('.playback-buttons .control-button') : activeSidebar();
-      if (direction === 'right') return firstVisible('.round-action') || firstVisible('.playback-buttons .control-button');
-      if (direction === 'down') return firstVisible('.playback-buttons .control-button');
+      if (direction === 'left') return shell.classList.contains('is-cinema') ? firstVisible('.playback-buttons .dial-button') : activeSidebar();
+      if (direction === 'right') return firstVisible('.round-action') || firstVisible('.playback-buttons .dial-button');
+      if (direction === 'down') return firstVisible('.playback-buttons .dial-button');
       if (direction === 'up') return pageMode() === 'player' ? null : activeChannel();
       return null;
     }
     if (zone === 'hero') {
       if (direction === 'right') return document.querySelector('.round-action');
-      if (direction === 'down') return firstCatalog() || firstVisible('.playback-buttons .control-button');
+      if (direction === 'down') return firstCatalog() || firstVisible('.playback-buttons .dial-button');
       if (direction === 'up') return activeChannel();
       if (direction === 'left') return activeSidebar();
       return null;
@@ -1527,12 +1530,24 @@
         return cardTarget || (direction === 'left' ? activeSidebar() : null);
       }
       if (direction === 'up') return firstVisible('.primary-action') || activeChannel();
-      if (direction === 'down') return firstVisible('.playback-buttons .control-button');
+      if (direction === 'down') return firstVisible('.playback-buttons .dial-button');
       return null;
     }
     if (zone === 'actions') {
       if (direction === 'up' || direction === 'down') return moveWithinZone(zone, current, direction) || (direction === 'down' ? firstVisible('.playback-buttons [data-action="fullscreen"]') : null);
       if (direction === 'left') return firstVisible('.hero-feed-focus') || firstVisible('.primary-action') || firstCatalog();
+      return null;
+    }
+    if (zone === 'more') {
+      // Five-column tile grid: left/right step neighbours, up/down jumps a
+      // whole row; the edges stop (the panel is its own closed world).
+      var tiles = focusables(zoneSelectors.more).filter(function (tile) { return !tile.classList.contains('is-hidden'); });
+      var at = tiles.indexOf(current);
+      if (at < 0) return tiles[0] || null;
+      if (direction === 'left') return tiles[at - 1] || null;
+      if (direction === 'right') return tiles[at + 1] || null;
+      if (direction === 'down') return tiles[at + 5] || null;
+      if (direction === 'up') return tiles[at - 5] || null;
       return null;
     }
     if (zone === 'controls') {
@@ -2023,7 +2038,7 @@
     // moving focus into the control center.
     var settle = function () {
       if (!sidebarMenuOpen) return;
-      var pause = firstVisible('.playback-buttons .control-button');
+      var pause = document.querySelector('.playback-buttons .dial-button[data-action="pause"]');
       goFocus(pause || activeSidebar());
     };
     if (window.requestAnimationFrame) {
@@ -2036,15 +2051,47 @@
     if (sidebarMenuTimer) { clearTimeout(sidebarMenuTimer); sidebarMenuTimer = 0; }
     if (!sidebarMenuOpen) { if (refocus) goFocus(firstContentFocus()); return; }
     sidebarMenuOpen = false;
+    if (morePanelOpen) closeMorePanel(false);
     shell.classList.remove('sidebar-open');
     if (refocus) goFocus(document.querySelector('.hero-feed-focus') || firstContentFocus());
     // The control bar belongs to the control center: it leaves with it.
     hideControls();
   }
+  // Second-level "more" panel behind the last dial: navigation tiles plus a
+  // utility row. Back returns to the main panel; the control center closes
+  // entirely when a tile navigates away.
+  var morePanelOpen = false;
+  function openMorePanel() {
+    if (morePanelOpen) return;
+    morePanelOpen = true;
+    var panel = document.getElementById('more-panel');
+    panel.classList.remove('is-hidden');
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () {
+          if (!morePanelOpen) return;
+          panel.classList.add('is-visible');
+          goFocus(panel.querySelector('.more-tile'));
+        });
+      });
+    } else { panel.classList.add('is-visible'); goFocus(panel.querySelector('.more-tile')); }
+  }
+  function closeMorePanel(refocus) {
+    if (!morePanelOpen) return;
+    morePanelOpen = false;
+    var panel = document.getElementById('more-panel');
+    panel.classList.remove('is-visible');
+    setTimeout(function () { if (!morePanelOpen) panel.classList.add('is-hidden'); }, 200);
+    if (refocus) goFocus(document.querySelector('.playback-buttons .dial-button[data-action="more"]') || activeSidebar());
+  }
+  function toggleMorePanel() {
+    if (morePanelOpen) closeMorePanel(true);
+    else openMorePanel();
+  }
   function togglePlaybackControls() {
     if (shell.classList.contains('is-controls-hidden')) {
       revealControls();
-      goFocus(firstVisible('.playback-buttons .control-button'));
+      goFocus(firstVisible('.playback-buttons .dial-button'));
       return true;
     }
     hideControls();
@@ -2178,11 +2225,11 @@
     if (key === 'Enter') {
       if (event.repeat) { event.preventDefault(); return; }
       if (zoneOf(current) === 'feed' && shell.classList.contains('is-controls-hidden')) {
-        revealControls(); goFocus(firstVisible('.playback-buttons .control-button'));
+        revealControls(); goFocus(firstVisible('.playback-buttons .dial-button'));
         event.preventDefault(); event.stopPropagation(); return;
       }
       if (current && current.id === 'control-progress') {
-        goFocus(lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
+        goFocus(lastPlaybackControl || firstVisible('.playback-buttons .dial-button'));
         event.preventDefault(); event.stopPropagation(); return;
       }
       if (current && current.id === 'search-input') {
@@ -2208,7 +2255,7 @@
     if (!direction) return;
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && current && current.id === 'control-progress') {
       if (direction === 'left' || direction === 'right') seekBy(direction === 'left' ? -10 : 10);
-      else goFocus(direction === 'up' ? document.getElementById('hero-feed-focus') : lastPlaybackControl || firstVisible('.playback-buttons .control-button'));
+      else goFocus(direction === 'up' ? document.getElementById('hero-feed-focus') : lastPlaybackControl || firstVisible('.playback-buttons .dial-button'));
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' &&
@@ -2581,7 +2628,7 @@
   function episodeLoadingText(episode) { return episode > 0 ? uiText('content.episodeNumber', '第{episode}集', { episode: episode }) : '…'; }
   function setControlIcon(action, label, icon) {
     var button = document.querySelector('[data-action="' + action + '"]');
-    var text = button.querySelector('.control-label');
+    var text = button.querySelector('.control-label, .dial-label');
     if (text.textContent !== label) text.textContent = label;
     button.setAttribute('aria-label', label);
     var use = button.querySelector('use');
@@ -3053,7 +3100,10 @@
   }
   function handleBack() {
     var current = typeof androidShell !== 'undefined' && androidShell ? remoteFocusTarget() || document.activeElement : document.activeElement;
-    if (sidebarMenuOpen) { closeSidebarMenu(true); return true; }
+    if (sidebarMenuOpen) {
+      if (morePanelOpen) { closeMorePanel(true); return true; }
+      closeSidebarMenu(true); return true;
+    }
     if (coreConnectionModalOpen) { closeCoreConnectionModal(true); return true; }
     if (autoCinemaCandidate) cancelPendingAutoCinema();
     if (endRecommendations && endRecommendations.close(true)) return true;
@@ -4229,7 +4279,7 @@
     else finish();
     if (restoreFocus && isPlaybackPage()) {
       revealControls();
-      goFocus(firstVisible('.playback-buttons [data-action="episodes"]') || firstVisible('.playback-buttons .control-button') || document.getElementById('hero-feed-focus'));
+      goFocus(firstVisible('.playback-buttons [data-action="episodes"]') || firstVisible('.playback-buttons .dial-button') || document.getElementById('hero-feed-focus'));
     }
   }
   function scrollEndRecommendationIntoView(card) {
@@ -7676,6 +7726,14 @@
     else showNotice(uiText('ui.noPlayableDrama', '当前还没有可打开的短剧。'));
       }
       else if (item.dataset.action === 'danmaku-scan') openDanmakuScan();
+      else if (item.dataset.action === 'more') toggleMorePanel();
+      else if (item.dataset.action === 'exit-app') { closeSidebarMenu(false); exitApplication(); }
+      else if (/^nav-/.test(item.dataset.action)) {
+        var pageKey = item.dataset.action.slice(4);
+        var pageItem = document.querySelector('.side-item[data-page="' + pageKey + '"]');
+        closeSidebarMenu(false);
+        if (pageItem) activatePage(pageItem, true);
+      }
       else if (['speed', 'volume', 'quality', 'send-danmaku'].indexOf(item.dataset.action) >= 0) openPlayerOptions(item.dataset.action, item);
       else if (item.dataset.action === 'diagnostics') openPlayerOptions('diagnostics', item);
       else if (item.dataset.action === 'fullscreen') toggleCinema();
