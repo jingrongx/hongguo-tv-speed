@@ -4188,23 +4188,9 @@
       autoEnterChain = chain + 1;
       autoEnterChainDirection = step;
       playFeedItem(target);
-      warmOrientationAhead(step);
     }
     attempt();
   }
-  // Pre-measure the next few dramas in the travel direction so later
-  // presses skip instantly instead of probing one by one.
-  function warmOrientationAhead(step) {
-    if (!landscapeAutoOnly) return;
-    for (var i = 1; i <= 3; i++) {
-      var index = feedIndex + step * i;
-      if (index < 0 || index >= feedItems.length || !feedItems[index]) break;
-      var candidate = feedItems[index];
-      if (isKnownVertical(candidate.series_id) || orientationKnown(candidate.series_id)) continue;
-      probeOrientation(candidate);
-    }
-  }
-
   function switchRecommendation(step) {
     if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
     var target = feedIndex + step;
@@ -4221,7 +4207,6 @@
     if (hops > 0) showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
     if (landscapeAutoOnly) { autoEnterChain = 1; autoEnterChainDirection = step; }
     playFeedItem(target);
-    warmOrientationAhead(step);
   }
 
   function installRecommendationGestures() {
