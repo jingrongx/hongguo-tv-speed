@@ -103,6 +103,9 @@
       unavailable: ['ui.serviceUnavailable', '本机服务连接失败，请重新打开应用']
     }[coreStatusState] || ['core.connecting', '连接核心服务…'];
     var diagnostic = coreStatusState !== 'connected' ? coreStatusDiagnostic : '';
+    // Connected is the healthy steady state: show nothing at all. The chip
+    // only exists to surface trouble (connecting / error) on the top bar.
+    status.classList.toggle('is-hidden', coreStatusState === 'connected');
     coreStatusLabel.textContent = uiText(message[0], message[1]) + (diagnostic ? ' [' + diagnostic + ']' : '');
     status.dataset.ok = coreStatusState === 'connected' ? 'true' : 'false';
     var canDiagnose = !!window.HongguoWebOS && coreStatusState !== 'connected';
@@ -5568,9 +5571,28 @@
       if (resumeIndex < 0) { feedItems.unshift(resume.item); resumeIndex = 0; }
       updateFeedCounter();
       playFeedItem(resumeIndex, resume.episode, resume.position);
+      armStartupDockFocus();
       return;
     }
     playFeedItem(pickAutoStartIndex(), 1, 0);
+    armStartupDockFocus();
+  }
+
+  // On a cold start the dock is on screen from the first frame, so the
+  // focus belongs on its keys — nowhere else. Waits for playback prep to
+  // paint the dock, gives up as soon as the user has a clear focus of
+  // their own, and hands back to the feed when the dock auto-hides.
+  function armStartupDockFocus() {
+    if (!immersiveMode()) return;
+    var tries = 0;
+    (function land() {
+      if (applicationInBackground || applicationHidden()) return;
+      var current = document.activeElement;
+      if (current && current !== document.body && zoneOf(current) !== '') return;
+      var pause = document.querySelector('.playback-buttons .dial-button[data-action="pause"]');
+      if (goFocus(pause)) return;
+      if (++tries < 40) setTimeout(land, 250);
+    })();
   }
 
   // Session resume: the drama, episode and exact position playing when the
