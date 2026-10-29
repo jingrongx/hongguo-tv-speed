@@ -3957,8 +3957,15 @@
     while (hops < 5 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) {
       target += step; hops++;
     }
+    // The feed is endless: approaching the tail fetches the next page up
+    // front, so mashing "down" keeps switching without waiting at the seam.
+    if (step > 0 && target >= feedItems.length - 1 && feedPager.hasMore() && !feedPager.busy) feedPager.load(false);
     if (target < 0 || target >= feedItems.length) { playFeedItem(target); return; }
     if (hops > 0) showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+    // Manual up/down switching honours the landscape preference as well:
+    // remembered vertical dramas were already hopped above, and the chain
+    // marker makes the playback-time dimension check skip first-timers too.
+    if (landscapeAutoOnly) autoEnterChain = 1;
     playFeedItem(target);
   }
 
