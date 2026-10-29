@@ -12,7 +12,7 @@
     catalog: '.catalog-card',
     actions: '.round-action',
     controls: '.playback-buttons .dial-button, #player-retry, #player-failure-diagnostics',
-    more: '#more-panel .more-tile',
+    more: '#more-panel .more-tile, #more-panel .more-utilities .control-button',
     timeline: '#control-progress',
     searchInput: '#search-input',
     searchSuggestions: '.search-suggestion',
@@ -1013,33 +1013,47 @@
 
   function scanModalOpen() { return searchScanOpen || danmakuScanOpen; }
 
+  // Focus scans used to force a reflow per element on every key press —
+  // the source of the sluggish remote. Now the expensive part (the
+  // querySelectorAll snapshot) is cached against structural DOM changes,
+  // and filtering only walks the DOM tree (closest/is-hidden), which never
+  // triggers layout. goFocus still verifies the final target precisely.
+  var focusScanKey = '';
+  var focusScanNodes = [];
+  function invalidateFocusScan() { focusScanKey = ''; }
   function focusables(selector) {
-    var result = [];
     var query = selector || Object.keys(zoneSelectors).map(function (zone) { return zoneSelectors[zone]; }).join(',');
-    Array.prototype.forEach.call(document.querySelectorAll(query), function (element) {
-      var style = window.getComputedStyle(element);
-      var insideModal = element.closest && element.closest('#detail-modal');
-      if (coreConnectionModalOpen) { if (!element.closest('#core-connection-modal')) return; }
-      else if (scanModalOpen()) { if (!element.closest('#search-scan-modal')) return; }
-      else if (accountCountryModalOpen) { if (!element.closest('#account-country-modal')) return; }
-      else if (accountKeypadOpen()) { if (!element.closest('#account-keypad-modal')) return; }
-      else if (supportModalOpen) { if (!element.closest('#support-modal')) return; }
-      else if (rankFilterOpen) { if (!element.closest('#rank-filter-modal')) return; }
-      else if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) { if (!element.closest('#actor-works-modal')) return; }
-      else if (detailCastOpen) { if (!element.closest('#detail-cast-modal')) return; }
-      else if (confirmOpen) { if (!element.closest('#confirm-modal')) return; }
-      else if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) { if (!element.closest('#playback-command-menu')) return; }
-      else if (playerOptionsOpen) { if (!element.closest('#player-options')) return; }
-      else if (discussionOpen) { if (!element.closest('#discussion-panel')) return; }
-      else if (endRecommendations && endRecommendations.isOpen()) { if (!element.closest('#end-recommendations')) return; }
-      else if (element.closest('#playback-command-menu')) return;
-      else if (element.closest('#end-recommendations')) return;
-      else if (element.closest('#discussion-panel')) return;
-      else if (detailModalOpen ? !insideModal : insideModal) return;
-      if (!element.getClientRects || !element.getClientRects().length) return;
-      if (!element.disabled && style.display !== 'none' && style.visibility !== 'hidden') result.push(element);
+    if (focusScanKey !== query) {
+      focusScanNodes = Array.prototype.slice.call(document.querySelectorAll(query));
+      focusScanKey = query;
+    }
+    var modalSelector = null;
+    if (coreConnectionModalOpen) modalSelector = '#core-connection-modal';
+    else if (scanModalOpen()) modalSelector = '#search-scan-modal';
+    else if (accountCountryModalOpen) modalSelector = '#account-country-modal';
+    else if (accountKeypadOpen()) modalSelector = '#account-keypad-modal';
+    else if (supportModalOpen) modalSelector = '#support-modal';
+    else if (rankFilterOpen) modalSelector = '#rank-filter-modal';
+    else if (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) modalSelector = '#actor-works-modal';
+    else if (detailCastOpen) modalSelector = '#detail-cast-modal';
+    else if (confirmOpen) modalSelector = '#confirm-modal';
+    else if (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) modalSelector = '#playback-command-menu';
+    else if (playerOptionsOpen) modalSelector = '#player-options';
+    else if (discussionOpen) modalSelector = '#discussion-panel';
+    else if (endRecommendations && endRecommendations.isOpen()) modalSelector = '#end-recommendations';
+    return focusScanNodes.filter(function (element) {
+      if (!element || element.disabled) return false;
+      if (!element.closest) return true;
+      if (modalSelector) return !!element.closest(modalSelector);
+      if (element.closest('#playback-command-menu') || element.closest('#end-recommendations') || element.closest('#discussion-panel')) return false;
+      var insideModal = element.closest('#detail-modal');
+      if (detailModalOpen ? !insideModal : insideModal) return false;
+      if (element.closest('.is-hidden')) return false;
+      return true;
     });
-    return result;
+  }
+  if (window.MutationObserver) {
+    new MutationObserver(invalidateFocusScan).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function firstVisible(selector) {
@@ -1174,9 +1188,9 @@
   }
 
   function goFocus(element) {
-    if (!element || element.disabled || !element.getClientRects().length) return;
-    if (window.getComputedStyle(element).visibility !== 'visible') return;
-    if (coreConnectionModalOpen && !element.closest('#core-connection-modal')) return;
+    if (!element || element.disabled || !element.getClientRects().length) return false;
+    if (window.getComputedStyle(element).visibility !== 'visible') return false;
+    if (coreConnectionModalOpen && !element.closest('#core-connection-modal')) return false;
     // The default scroll behavior is sufficient; old WebViews have no
     // focus-options overload.
     var previous = document.activeElement;
@@ -1203,6 +1217,7 @@
       lastContentFocus = element;
       lastPageFocus[pageMode()] = element;
     }
+    return true;
   }
 
   function firstContentFocus() {
@@ -1539,15 +1554,28 @@
       return null;
     }
     if (zone === 'more') {
-      // Five-column tile grid: left/right step neighbours, up/down jumps a
-      // whole row; the edges stop (the panel is its own closed world).
-      var tiles = focusables(zoneSelectors.more).filter(function (tile) { return !tile.classList.contains('is-hidden'); });
-      var at = tiles.indexOf(current);
-      if (at < 0) return tiles[0] || null;
-      if (direction === 'left') return tiles[at - 1] || null;
-      if (direction === 'right') return tiles[at + 1] || null;
-      if (direction === 'down') return tiles[at + 5] || null;
-      if (direction === 'up') return tiles[at - 5] || null;
+      // Five-column tile grid on top, utility row below. Left/right step
+      // neighbours through both rows; down from the last grid row drops
+      // onto the utilities column-by-column, up returns to the grid.
+      var items = focusables(zoneSelectors.more).filter(function (item) { return !item.classList.contains('is-hidden'); });
+      var at = items.indexOf(current);
+      if (at < 0) return items[0] || null;
+      var grid = items.filter(function (item) { return !item.classList.contains('control-button'); });
+      var tools = items.filter(function (item) { return item.classList.contains('control-button'); });
+      if (direction === 'left') return items[at - 1] || null;
+      if (direction === 'right') return items[at + 1] || null;
+      var gridAt = grid.indexOf(current);
+      if (direction === 'down') {
+        if (gridAt >= 0) {
+          if (gridAt + 5 < grid.length) return grid[gridAt + 5];
+          return tools.length ? tools[Math.min(gridAt % 5, tools.length - 1)] : null;
+        }
+        return null;
+      }
+      if (direction === 'up') {
+        if (gridAt >= 0) return gridAt - 5 >= 0 ? grid[gridAt - 5] : null;
+        return grid.length ? grid[5 + tools.indexOf(current)] || grid[tools.indexOf(current)] || null : null;
+      }
       return null;
     }
     if (zone === 'controls') {
@@ -2035,11 +2063,15 @@
     armSidebarIdle();
     // goFocus rejects elements that still compute as visibility:hidden, so
     // wait until the just-added overlay class has been applied before
-    // moving focus into the control center.
+    // moving focus into the control center. A failed attempt retries: if
+    // focus silently stayed on the feed, the next up/down key would switch
+    // dramas while the control center is on screen.
+    var settleTries = 0;
     var settle = function () {
       if (!sidebarMenuOpen) return;
       var pause = document.querySelector('.playback-buttons .dial-button[data-action="pause"]');
-      goFocus(pause || activeSidebar());
+      if (goFocus(pause || activeSidebar())) return;
+      if (++settleTries <= 5 && window.requestAnimationFrame) window.requestAnimationFrame(settle);
     };
     if (window.requestAnimationFrame) {
       window.requestAnimationFrame(function () {
@@ -2066,6 +2098,8 @@
     morePanelOpen = true;
     var panel = document.getElementById('more-panel');
     panel.classList.remove('is-hidden');
+    // One menu at a time: the dock sinks while the grid is on screen.
+    shell.classList.add('more-open');
     if (window.requestAnimationFrame) {
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () {
@@ -2079,6 +2113,7 @@
   function closeMorePanel(refocus) {
     if (!morePanelOpen) return;
     morePanelOpen = false;
+    shell.classList.remove('more-open');
     var panel = document.getElementById('more-panel');
     panel.classList.remove('is-visible');
     setTimeout(function () { if (!morePanelOpen) panel.classList.add('is-hidden'); }, 200);
@@ -2168,6 +2203,11 @@
   }
   function handleKey(event) {
     var key = normalizedKey(event);
+    // Direction keys run back-to-back on the hot path and reuse the cached
+    // focus scan; any other key may toggle a modal or panel, so the scan
+    // must be refreshed first. (Guarded: keyboard-slicing unit tests stub
+    // the surrounding world without the cache.)
+    if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight' && typeof invalidateFocusScan === 'function') invalidateFocusScan();
     if (onboardingOpen) { closeOnboarding(); event.preventDefault(); event.stopPropagation(); return; }
     if (key === 'Menu' && immersiveMode()) {
       // The menu key is interchangeable with OK: both toggle the control
@@ -2304,6 +2344,11 @@
     var target = moveFrom(current, direction);
     if (target) {
       goFocus(target);
+    } else if (zoneOf(current) === '' && !detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen) {
+      // Dead-surface guard: the focus was lost (a page opened without ever
+      // receiving it). Bring the user back to the page's own entry point
+      // instead of silently swallowing remote keys.
+      goFocus(firstContentFocus());
     }
     // Consume boundary keys too; WebView must not scroll the page or perform
     // its own focus search when the remote reaches the end of a zone.
@@ -4049,6 +4094,112 @@
     setPlayerStatus('');
   }
 
+  // Hop to the next landscape drama in the given direction, skipping known
+  // verticals; refuse politely when the feed ends that way.
+  function skipVerticalFrom(dir, chain) {
+    var target = feedIndex + dir;
+    var hops = 0;
+    while (hops < 5 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) {
+      target += dir; hops++;
+    }
+    if (target < 0 || target >= feedItems.length) {
+      showNotice(uiText(dir < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
+        dir < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
+      return false;
+    }
+    showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+    autoEnterChain = chain + 1;
+    autoEnterChainDirection = dir;
+    playFeedItem(target);
+    return true;
+  }
+
+  // Dramas whose orientation was already measured through a play-info
+  // probe (both vertical and landscape). Keeps the pre-check to one round
+  // trip per drama for the lifetime of the install.
+  function knownProbedDramas() {
+    try { return JSON.parse(window.localStorage.getItem('hongguo.probedSeries') || '[]'); }
+    catch (error) { return []; }
+  }
+  function orientationKnown(seriesId) {
+    return !!seriesId && knownProbedDramas().indexOf(String(seriesId)) >= 0;
+  }
+  function rememberProbedDrama(seriesId) {
+    if (!seriesId) return;
+    try {
+      var list = knownProbedDramas().filter(function (id) { return id !== String(seriesId); });
+      list.push(String(seriesId));
+      if (list.length > 400) list = list.slice(-400);
+      window.localStorage.setItem('hongguo.probedSeries', JSON.stringify(list));
+    } catch (error) { /* best effort */ }
+  }
+  // Silent orientation probe: resolves the first episode's dimensions from
+  // play-info without touching the player, then records the verdict. The
+  // viewer keeps watching the current drama while this runs.
+  var orientationProbes = {};
+  function probeOrientation(item) {
+    var seriesId = String(item && item.series_id || '');
+    if (!seriesId) return Promise.resolve(null);
+    if (orientationProbes[seriesId]) return orientationProbes[seriesId];
+    orientationProbes[seriesId] = getDetail(item).catch(function () { return null; }).then(function (detail) {
+      var vid = detail && detail.vid_list && detail.vid_list[0];
+      if (!vid) return null;
+      var params = new URLSearchParams({ series_id: seriesId, vid: String(vid), quality: playbackPreferences.quality, prefetch: '1', sw: softDecodeFlag() });
+      return fetchData('/api/v1/play/info?' + params, {}).then(function (data) {
+        var width = Number(data.video_width) || 0, height = Number(data.video_height) || 0;
+        var vertical = width > 0 && height > 0 && height > width;
+        rememberVerticalDrama(item.series_id, vertical);
+        rememberProbedDrama(item.series_id);
+        return vertical;
+      }).catch(function () { return null; });
+    });
+    return orientationProbes[seriesId];
+  }
+  // Walk the feed in the given direction, measuring unknown dramas on the
+  // fly, until a landscape one is found. Nothing paints until then.
+  function probeAndPlay(startTarget, step, chain) {
+    var target = startTarget;
+    var hops = 0;
+    function attempt() {
+      if (target < 0 || target >= feedItems.length || hops >= 5) {
+        showNotice(uiText(step < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
+          step < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
+        return;
+      }
+      var item = feedItems[target];
+      if (isKnownVertical(item.series_id)) { target += step; hops++; attempt(); return; }
+      probeOrientation(item).then(function (vertical) {
+        if (vertical) { target += step; hops++; attempt(); return; }
+        finish();
+      });
+    }
+    function finish() {
+      if (target < 0 || target >= feedItems.length) {
+        showNotice(uiText(step < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
+          step < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
+        return;
+      }
+      if (hops > 0) showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+      autoEnterChain = chain + 1;
+      autoEnterChainDirection = step;
+      playFeedItem(target);
+      warmOrientationAhead(step);
+    }
+    attempt();
+  }
+  // Pre-measure the next few dramas in the travel direction so later
+  // presses skip instantly instead of probing one by one.
+  function warmOrientationAhead(step) {
+    if (!landscapeAutoOnly) return;
+    for (var i = 1; i <= 3; i++) {
+      var index = feedIndex + step * i;
+      if (index < 0 || index >= feedItems.length || !feedItems[index]) break;
+      var candidate = feedItems[index];
+      if (isKnownVertical(candidate.series_id) || orientationKnown(candidate.series_id)) continue;
+      probeOrientation(candidate);
+    }
+  }
+
   function switchRecommendation(step) {
     if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
     var target = feedIndex + step;
@@ -4060,12 +4211,12 @@
     // front, so mashing "down" keeps switching without waiting at the seam.
     if (step > 0 && target >= feedItems.length - 1 && feedPager.hasMore() && !feedPager.busy) feedPager.load(false);
     if (target < 0 || target >= feedItems.length) { playFeedItem(target); return; }
+    // Switching starts immediately; vertical verdicts arrive with the
+    // play-info response and are enforced before anything repaints.
     if (hops > 0) showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
-    // Manual up/down switching honours the landscape preference as well:
-    // remembered vertical dramas were already hopped above, and the chain
-    // marker makes the playback-time dimension check skip first-timers too.
-    if (landscapeAutoOnly) autoEnterChain = 1;
+    if (landscapeAutoOnly) { autoEnterChain = 1; autoEnterChainDirection = step; }
     playFeedItem(target);
+    warmOrientationAhead(step);
   }
 
   function installRecommendationGestures() {
@@ -5067,6 +5218,10 @@
   // start, end-of-season rotation, landscape skipping — increment it so the
   // landscape filter only steers automatic choices, never manual picks.
   var autoEnterChain = 0;
+  // Direction of the last automatic hop (+1 down the feed, -1 up). Manual
+  // "up" switching must keep skipping upwards: a fixed +1 bounced the
+  // viewer straight back to the drama they had just left.
+  var autoEnterChainDirection = 1;
   // Automatic selection prefers landscape dramas: vertical dramas look tiny
   // on a TV. Applied only while autoEnterChain > 0 and only when the video
   // dimensions are actually known; manual playback is never interrupted.
@@ -5228,11 +5383,29 @@
         var vid = episode === 1 ? firstVid(detail) : detail.vid_list && detail.vid_list[episode - 1];
         if (!vid) throw new Error(uiText('content.episodeNoVideo', '第{episode}集暂无视频数据', { episode: episode }));
         var playing = Object.assign({}, item, detail, { start_episode: episode, vid: vid });
+        // Orientation pre-check: this very play/info request both warms the
+        // core's download cache (prefetch=1) and reports the video size, so
+        // the vertical verdict costs nothing extra and lands before any
+        // repaint. Landscape dramas proceed untouched.
+        var orientationCheck = Promise.resolve(false);
+        if (landscapeAutoOnly && autoChain > 0 && !sameSeries) {
+          var probeParams = new URLSearchParams({ series_id: item.series_id, vid: String(vid), quality: playbackPreferences.quality, prefetch: '1', sw: softDecodeFlag() });
+          orientationCheck = fetchData('/api/v1/play/info?' + probeParams, request ? { signal: request.signal } : {}).then(function (info) {
+            var probeWidth = Number(info.video_width) || 0, probeHeight = Number(info.video_height) || 0;
+            var probeVertical = probeWidth > 0 && probeHeight > 0 && probeHeight > probeWidth;
+            rememberVerticalDrama(item.series_id, probeVertical);
+            rememberProbedDrama(item.series_id);
+            return probeVertical;
+          }).catch(function () { return false; });
+        }
+        return orientationCheck.then(function (vertical) {
+          if (vertical && generation === feedGeneration && !request.signal.aborted) { skipVerticalFrom(autoEnterChainDirection, autoChain); return null; }
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
           episodeCoverAllowed: keepEpisodeCover,
           preserveNativeTransition: sameSeries,
           endedPending: false,
           autoChain: autoChain,
+          autoDirection: autoEnterChainDirection,
           landscapeChecked: false,
           mode: '', rangeFallback: '', rangeFallbackAttempted: false,
           recoveryAttempts: recovery && recovery.recoveryAttempts || 0,
@@ -5307,11 +5480,7 @@
         function skipVerticalAutoDrama() {
           var chain = activePlayback.autoChain;
           if (chain >= 6) { showNotice(uiText('ui.landscapeSkipLimit', '连续多部都是竖屏剧，继续播放本剧')); return false; }
-          if (feedIndex + 1 >= feedItems.length) { showNotice(uiText('ui.landscapeNoNext', '后面暂时没有更多横屏剧')); return false; }
-          showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
-          autoEnterChain = chain + 1;
-          playFeedItem(feedIndex + 1);
-          return true;
+          return skipVerticalFrom(activePlayback.autoDirection || 1, chain);
         }
         function attachPreparedSource() {
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
@@ -5346,6 +5515,7 @@
         return waitForPlaybackPaint(generation, request.signal).then(function (painted) {
           if (!painted || generation !== feedGeneration || request.signal.aborted) return;
           attachPreparedSource();
+        });
         });
       })
       .catch(function (error) {
@@ -5429,6 +5599,12 @@
       return snap;
     } catch (error) { return null; }
   }
+  // The pause-time snapshot can be lost when the shell suspends the WebView
+  // right after queueing the JS call (Home key, remote power). Writing the
+  // snapshot periodically bounds that gap to a few seconds of progress.
+  if (typeof setInterval === 'function') setInterval(function () {
+    if (!applicationInBackground && activePlayback && activePlayback.started && !applicationHidden()) rememberResumeSnapshot();
+  }, 5000);
   function pickAutoStartIndex() {
     var pool = feedItems.slice(0, Math.min(8, feedItems.length));
     var lastSeries = '';
@@ -7615,7 +7791,22 @@
     document.getElementById('page-placeholder-copy').textContent = uiText('ui.pageNotReady', '这个页面的数据和交互正在接入。');
     showNotice(uiText('ui.pageEntered', '{page}页面已进入，下一步接入对应数据。', { page: label ? label.textContent : uiText('ui.page', '页面') }));
     }
-    if (!restoring) goFocus(firstContentFocus());
+    if (!restoring) {
+      var pageTarget = firstContentFocus();
+      goFocus(pageTarget);
+      // The page may still be laying out when focus is requested; a silent
+      // goFocus failure here leaves the remote on a dead surface. Retry on
+      // the next frame and then walk through the page's own candidates.
+      if (document.activeElement !== pageTarget) {
+        if (window.requestAnimationFrame) {
+          window.requestAnimationFrame(function () {
+            var retry = firstContentFocus();
+            goFocus(retry);
+            if (document.activeElement !== retry && !goFocus(retry)) goFocus(activeSidebar());
+          });
+        } else goFocus(activeSidebar());
+      }
+    }
   }
 
   if (desktopShell && window.HongguoDesktopUI && window.HongguoDesktopUI.createPointerFocus) {
@@ -7751,8 +7942,12 @@
       else if (/^nav-/.test(item.dataset.action)) {
         var pageKey = item.dataset.action.slice(4);
         var pageItem = document.querySelector('.side-item[data-page="' + pageKey + '"]');
+        // Leaving through the "more" grid: close it, and activate the page
+        // fresh (restoring=false) so focus actually lands on the page. The
+        // restoring=true path skips goFocus and left the remote dead.
+        closeMorePanel(false);
         closeSidebarMenu(false);
-        if (pageItem) activatePage(pageItem, true);
+        if (pageItem) activatePage(pageItem);
       }
       else if (['speed', 'volume', 'quality', 'send-danmaku'].indexOf(item.dataset.action) >= 0) openPlayerOptions(item.dataset.action, item);
       else if (item.dataset.action === 'diagnostics') openPlayerOptions('diagnostics', item);
@@ -8125,13 +8320,8 @@
     if (landscapeAutoOnly && activePlayback.autoChain > 0 && !activePlayback.landscapeChecked && pageMode() === 'recommend' &&
         media.videoWidth > 0 && media.videoHeight > media.videoWidth) {
       activePlayback.landscapeChecked = true;
-      if (feedIndex + 1 < feedItems.length) {
-        showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
-        autoEnterChain = activePlayback.autoChain + 1;
-        playFeedItem(feedIndex + 1);
-        return;
-      }
-      showNotice(uiText('ui.landscapeNoNext', '后面暂时没有更多横屏剧'));
+      skipVerticalFrom(activePlayback.autoDirection || 1, activePlayback.autoChain);
+      return;
     }
     var position = activePlayback.position;
     var adapter = typeof window !== 'undefined' ? window.HongguoNativePlaybackAdapter : null;

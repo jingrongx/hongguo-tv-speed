@@ -10,7 +10,7 @@ const helper = source.match(/  function revealSidebarFocus\(element\) \{[\s\S]*?
 assert.ok(helper, 'sidebar focus visibility helper exists');
 
 test('short viewport rules compact the sidebar at tested height boundaries', () => {
-  assert.match(appCss, /\.side-item\s*\{[^}]*min-height:\s*54px;[^}]*font-size:\s*20px;/);
+  assert.match(appCss, /\.side-item\s*\{[^}]*min-height:\s*54px;[^}]*font-size:\s*22px;/);
   assert.match(appCss, /\.app-shell\.sidebar-icons \.side-icon\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/);
   const compactAt850 = compatCss.indexOf('@media (max-height: 850px)');
   const compactAt680 = compatCss.indexOf('@media (max-height: 680px)');

@@ -84,7 +84,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
   ` + slice('resumeEpisode', 'clockText') + slice('changeLibrary', 'toggleSaved') +
     slice('recommendationChannel', 'showRecommendationPlaceholder') + slice('saveProgress', 'continueAfterEpisode') +
     slice('recoverPlaybackPreparation', 'clearRangeTransitionHint') +
-    `var autoEnterChain=0,landscapeAutoOnly=true;function softDecodeFlag(){return '';}function showEpisodeTransition(){}function hideEpisodeTransition(){}var episodeTransitionTimer=0;` +
+    `var autoEnterChain=0,autoEnterChainDirection=1,landscapeAutoOnly=true;function softDecodeFlag(){return '';}function showEpisodeTransition(){}function hideEpisodeTransition(){}var episodeTransitionTimer=0;` +
     slice('playFeedItem', 'posterSeasonLabel') + slice('loadCatalog', 'seriesMessage') +
     source.slice(source.indexOf('  function activatePage('), source.indexOf("  document.addEventListener('keydown', handleKey")), c);
   return { c, calls, video, channel, state, async flush() { for (let i = 0; i < 6; i++) await tick(); }, entry(episode, position, extra = {}) {

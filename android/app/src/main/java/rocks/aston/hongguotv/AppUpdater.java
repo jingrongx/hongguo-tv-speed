@@ -55,6 +55,7 @@ final class AppUpdater {
     private volatile boolean destroyed;
     private volatile String snapshot = "{}";
     private boolean started, checking, downloading, promptAllowed, manualPrompt, promptCheckPending;
+    private volatile boolean recoveryMode;
     private Manifest latest;
     private String state = "idle", message = "";
     private long downloaded;
@@ -103,6 +104,17 @@ final class AppUpdater {
     final class Bridge {
         @JavascriptInterface public String getStatus() { return host.trusted() ? snapshot : "{}"; }
         @JavascriptInterface public void check() { if (host.trusted()) activity.runOnUiThread(() -> checkNow(true)); }
+        /**
+         * The page itself crashed at startup (window.onerror). Nothing will
+         * ever call setPromptAllowed or answer canShowAppUpdate, so from here
+         * on the native side owns prompting: run a check and let its dialog
+         * through even though the page is dead. This is the escape hatch
+         * that turns a broken release into an immediate offer to update.
+         */
+        @JavascriptInterface public void checkAfterFailure() {
+            recoveryMode = true;
+            if (host.trusted()) activity.runOnUiThread(() -> { manualPrompt = true; checkNow(true); });
+        }
         void checkAuto() { activity.runOnUiThread(() -> checkNow(false)); }
         @JavascriptInterface public void install() {
             if (host.trusted()) activity.runOnUiThread(() -> {
@@ -115,7 +127,7 @@ final class AppUpdater {
     }
 
     private final android.os.Handler autoCheckHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-    private static final long AUTO_CHECK_REPEAT_MILLIS = 6L * 60 * 60 * 1000;
+    private static final long AUTO_CHECK_REPEAT_MILLIS = 1L * 60 * 60 * 1000;
 
     void start() {
         if (started || destroyed) return;
@@ -131,9 +143,9 @@ final class AppUpdater {
     }
 
     /**
-     * Long-running TVs stay current: re-check every six hours (the startup
-     * gate keeps the first check to once per day per install policy). Every
-     * automatic check is silent — a new version just starts downloading.
+     * Long-running TVs stay current: re-check every hour (the startup gate
+     * uses the same interval). Every automatic check is silent — a new
+     * version just starts downloading.
      */
     private void scheduleNextAutoCheck() {
         if (destroyed) return;
@@ -152,7 +164,7 @@ final class AppUpdater {
             if (apk.isFile()) {
                 PackageInfo info = activity.getPackageManager().getPackageArchiveInfo(apk.getPath(), 0);
                 if (info == null || info.versionCode <= BuildConfig.VERSION_CODE
-                        || System.currentTimeMillis() - apk.lastModified() > UpdatePolicy.CHECK_INTERVAL) apk.delete();
+                        || System.currentTimeMillis() - apk.lastModified() > UpdatePolicy.APK_CACHE_TTL) apk.delete();
                 Manifest target = latest;
                 if (apk.isFile() && target != null && apk.length() == target.bytes && info != null && info.versionCode == target.code) {
                     try {
@@ -279,7 +291,9 @@ final class AppUpdater {
     }
 
     private boolean canShow() {
-        return !destroyed && host.foreground() && host.trusted() && promptAllowed
+        // In recovery mode the page is dead: skip its prompt permission and
+        // let the native dialog speak for itself.
+        return !destroyed && host.foreground() && host.trusted() && (promptAllowed || recoveryMode)
                 && !activity.isFinishing() && !activity.isDestroyed() && dialog == null;
     }
 
@@ -287,18 +301,23 @@ final class AppUpdater {
         if (!"available".equals(state) || latest == null || !canShow() || promptCheckPending) return;
         if (!manualPrompt && preferences.getInt("dismissed_code", 0) >= latest.code) return;
         final Manifest target = latest;
+        if (recoveryMode) { showUpdatePrompt(target); return; }
         promptCheckPending = true;
         host.allowPrompt(allowed -> {
             promptCheckPending = false;
             if (!allowed || !canShow() || target != latest || !"available".equals(state)) return;
             manualPrompt = false;
-            AlertDialog prompt = new AlertDialog.Builder(activity).setTitle("发现新版本 " + target.name)
-                .setMessage((target.notes.isEmpty() ? "红果短剧有新版本可以安装。" : target.notes) + "\n\n覆盖升级保留账号和记录。")
-                .setNegativeButton("稍后", (d, which) -> defer(target))
-                .setPositiveButton("立即更新", (d, which) -> beginDownload(target)).create();
-            prompt.setOnCancelListener(d -> defer(target));
-            show(prompt, AlertDialog.BUTTON_NEGATIVE);
+            showUpdatePrompt(target);
         });
+    }
+
+    private void showUpdatePrompt(Manifest target) {
+        AlertDialog prompt = new AlertDialog.Builder(activity).setTitle("发现新版本 " + target.name)
+            .setMessage((target.notes.isEmpty() ? "红果短剧有新版本可以安装。" : target.notes) + "\n\n覆盖升级保留账号和记录。")
+            .setNegativeButton("稍后", (d, which) -> defer(target))
+            .setPositiveButton("立即更新", (d, which) -> beginDownload(target)).create();
+        prompt.setOnCancelListener(d -> defer(target));
+        show(prompt, AlertDialog.BUTTON_NEGATIVE);
     }
 
     private void defer(Manifest target) {

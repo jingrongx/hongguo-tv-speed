@@ -29,7 +29,10 @@ final class UpdatePolicy {
             "https://ghfast.top/"
     };
     static final long MAX_APK_BYTES = 100L * 1024 * 1024;
-    static final long CHECK_INTERVAL = 24L * 60 * 60 * 1000;
+    // Hourly checks: a broken release surfaces its fix within the hour.
+    static final long CHECK_INTERVAL = 1L * 60 * 60 * 1000;
+    // Downloaded installers stay cached for a day regardless of the check rate.
+    static final long APK_CACHE_TTL = 24L * 60 * 60 * 1000;
 
     static boolean automaticCheckDue(long now, long lastAttempt) {
         return lastAttempt <= 0 || lastAttempt > now || now - lastAttempt >= CHECK_INTERVAL;

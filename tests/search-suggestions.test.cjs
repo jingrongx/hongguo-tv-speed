@@ -82,7 +82,7 @@ test('suggestion panel uses the input and scan control width without counting se
 test('reservation status tabs retain their previous compact pill appearance', () => {
   const css = fs.readFileSync(require.resolve('../core/cmd/hongguotv/ui/app.css'), 'utf8');
   assert.match(css, /\.reservation-tabs\s*\{[^}]*gap:\s*12px/);
-  assert.match(css, /\.reservation-tab\s*\{[^}]*min-width:\s*94px;[^}]*min-height:\s*42px;[^}]*background:\s*#20212a;[^}]*border-radius:\s*22px/);
+  assert.match(css, /\.reservation-tab\s*\{[^}]*min-width:\s*94px;[^}]*min-height:\s*42px;[^}]*background:\s*#e2e6ee;[^}]*border-radius:\s*22px/);
   assert.match(css, /\.reservation-tab\.is-active\s*\{[^}]*background:\s*#5b9dff/);
 });
 

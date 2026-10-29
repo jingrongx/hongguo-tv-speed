@@ -117,6 +117,15 @@
 
   window.addEventListener('error', function () {
     var status = document.getElementById('core-status');
-    if (status && status.textContent === t('ui.coreConnecting', '连接核心服务…')) { status.textContent = t('ui.startupFailed', '界面启动失败，请重新打开应用'); status.dataset.ok = 'false'; }
+    if (status && status.textContent === t('ui.coreConnecting', '连接核心服务…')) {
+      status.textContent = t('ui.startupFailed', '界面启动失败，正在检查新版本…');
+      status.dataset.ok = 'false';
+      // The page is broken: ask the native shell to check for an update and
+      // prompt for it natively (see AppUpdater.checkAfterFailure).
+      var updates = window.HongguoTVUpdates;
+      if (updates && typeof updates.checkAfterFailure === 'function') {
+        try { updates.checkAfterFailure(); } catch (ignored) { /* bridge race */ }
+      }
+    }
   });
 })(window, document);

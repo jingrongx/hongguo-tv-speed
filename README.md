@@ -1,70 +1,105 @@
 # 红果短剧 TV 极速版
 
-面向 Android TV 的红果短剧第三方客户端。基于开源项目深度重构，围绕"**打开即播、全程全屏、遥控零学习成本**"重新设计了整套交互与播放链路，专为电视大屏和低端电视盒子优化。
+专为电视与电视盒子打磨的红果短剧第三方客户端。大屏、遥控器优先、
+极速换剧换集，带完整的自更新通道与自动发版流水线。
+
+> 基于 [aston314/hongguo-tv](https://github.com/aston314/hongguo-tv) 二次开发的独立发行版，
+> 包名、签名、更新通道均已独立，与上游互不影响。感谢原作者的出色工作。
+
+## 界面一览
+
+| 推荐流播放 | 悬浮控制 Dock |
+| --- | --- |
+| ![推荐流播放](docs/screenshots/playback.png) | ![悬浮控制 Dock](docs/screenshots/control-dock.png) |
+
+| 更多功能网格 | 首次启动指南 |
+| --- | --- |
+| ![更多功能网格](docs/screenshots/more-grid.png) | ![首次启动指南](docs/screenshots/first-run-guide.png) |
 
 ## 特性
 
-### 沉浸式电视交互
+### 播放体验
 
-- 打开应用即全屏自动播放一部剧的第一集（随机、不重复上次、默认只选横屏剧）
-- 全程单一播放界面：**上下键换剧、左右键切集**，任何时候语义一致
-- OK 键呼出半透明侧边栏菜单，菜单键呼出底部控件行（选集/选季/清晰度/倍速/音量）
-- 6 秒无操作自动收起所有浮层，返回键一级一级退出
-- 默认软件解码 + 播放时解析视频宽高，自动记录并跳过竖屏剧
+- **全屏连播**：进入即播，一集看完自动接下一集，一部看完自动接下一部
+- **无缝换集**：换集不黑屏、不转圈，原子换流 + 磁盘级预取缓存
+- **官方式过渡卡**：换集/换剧时封面卡片滑入，画面就绪即揭开
+- **竖屏剧自动跳过**：换剧前静默测量宽高，竖屏剧不闪屏直接跳过；已测过的剧永久记忆，秒跳
+- **音量均衡**：动态响度归一，各剧之间不再忽大忽小
+- **硬解优先，崩溃自愈**：自动硬解；解码服务异常时自动降级软解，下次启动自愈
 
-### 极速换集
+### 遥控器交互
 
-- 双层预取：当前集开播即预解析下一集（Range 首块预热），同时后台把下一集**整集下载到本地磁盘**
-- 换集时优先播放已下载的本地文件（零网络等待），未完成时无缝降级到预热流
-- 软件解码下使用 mpv 原子换流（loadfile replace），换集无停止栅栏、无固定间隙
+- **统一按键语法**：↑↓ 换剧，←→ 切集，OK/菜单键呼出控制中心，返回逐级退出、双击退出应用
+- **悬浮控制 Dock**：进度条 + 五大按键（历史/选集/播放/倍速/更多），白色播放键为视觉锚点
+- **极速响应**：焦点路由零布局重排，按键即达
+- **首次启动指南**：只显示一次，四行大字讲清全部按键
 
-### 稳定性
+### 功能页面
 
-- 针对 rk356x 等盒子的厂商解码服务崩溃（Scudo abort in omx@1.0-service）做了完整规避：默认软件解码完全绕开出问题的系统组件
-- 换集崩溃、绿屏（RGA 对齐缺陷）、bytevc1 编码不兼容等问题已逐一从真机日志定位并修复
-- 基于 mpv-android 2026 构建的最新 libmpv + ffmpeg，覆盖旧版无法解码的 bytevc1（H.266 系）片源
+- 找剧/排行榜/新剧/收藏/追更/我的/打赏/设置，全部接入统一交互
+- 弹幕、清晰度切换、选季、倍速、诊断面板
+- 退出时记住剧目与进度，下次进入从原处继续
+- 登录官方账号后历史云同步，重装不丢
 
-### 独立与去上游化
+### 更新机制
 
-- 独立应用包名（`com.jingrongx.hongguotv`）、独立签名密钥库、独立更新通道（`jingrongx/hongguo-tv` GitHub Releases）
-- Go 模块路径、桌面更新清单均已更名，不依赖原作者的任何服务或仓库
-- 内置播放协议实现（签名、CENC AES-CTR 解密、Range 媒体路由）来自原项目的已验证代码，本项目在其上持续维护
+- 应用内自动检查（每小时），发现新版本静默后台下载、断点续传，完成后轻提示一键安装
+- 界面启动异常时自动转入"更新恢复"模式：原生弹窗提示新版本，不依赖页面本身
+- 推送 `v*` 标签即自动构建发布（GitHub Actions），产出签名 APK 与更新清单
 
-## 功能
+## 安装
 
-推荐流、找剧、分类、排行榜、新剧、上新日历、详情、选集、选季、连续播放、下一季、历史、收藏、点赞、预约、账号登录（官方账号）、云端同步、评论、弹幕、电视桌面频道同步。
+1. 在 [Releases](https://github.com/jingrongx/hongguo-tv-speed/releases) 下载 `hongguo-tv-speed-mpv-<版本>.apk`
+   （MPV 播放内核版，推荐）或 `hongguo-tv-speed-<版本>.apk`（标准 WebView 版）
+2. 通过 U 盘或 `adb install` 安装到电视
+3. 应用启动后自动检查更新（每小时一次）；也可在"设置 → 应用更新"手动检查
 
 ## 构建
 
-```bash
-# Go 核心（三个 ABI，产物进 android/app/src/main/jniLibs）
-GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
-  CC=<ndk>/aarch64-linux-android23-clang.cmd \
-  go build -trimpath -buildmode=pie -ldflags "-s -w -X main.version=<ver>" \
-  -o android/app/src/main/jniLibs/arm64-v8a/libhongguotv.so ./core/cmd/hongguotv
-
-# Android APK（需要 android/keystore.properties 与签名密钥库）
-gradle.bat -p android assembleMpvRelease   # MPV 解码版（推荐）
-gradle.bat -p android assembleStandardRelease
-```
-
-环境要求：Go 1.25+（GOPROXY 建议国内镜像）、NDK 27、JDK 17、Gradle 8.14。
-
-## 测试
+依赖：Go 1.25+、JDK 17、Android SDK/NDK（r27）、Gradle 8.x、Node.js 22（测试）。
 
 ```bash
-node --test tests/*.cjs   # 508 项 UI/逻辑回归
-go test ./core/...        # Go 核心回归
+# 1. 编译 Go 核心（三个 ABI；改 core/cmd/hongguotv/ui/ 下任何文件都必须重编）
+#    版本号必须与 android/app/build.gradle 的 appVersion 一致，格式 <版本>-dev
+GOOS=android GOARCH=arm64 CGO_ENABLED=1   CC=$NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android23-clang.cmd   go build -trimpath -ldflags "-s -w -X main.version=0.2.153-dev"   -o ../android/app/src/main/jniLibs/arm64-v8a/libhongguotv.so ./cmd/hongguotv
+
+# 2. 构建 APK（签名读取 android/keystore.properties，或 CI 环境变量）
+cd android && gradle assembleMpvRelease
+
+# 3. 前端回归测试（508 项）
+node --test tests/*.cjs
 ```
 
-## 技术文档
+### 自动发版
 
-- [TV 布局与遥控器交互](docs/tv-design.md)
-- [协议证据与待验证接口](docs/protocol-evidence.md)
-- [账号登录与云同步](docs/account-sync.md)
-- [MPV 库源码、构建和替换](docs/mpv-library-source.md)
-- [webOS 移植说明](webos/README.md)
+推送 `v*` 标签即可：
+
+```bash
+git tag v0.2.153 && git push origin v0.2.153
+```
+
+CI 自动：编译三 ABI 核心 → 拉取 mpv-android 库并编译桥接 → 签名 APK →
+发布 Release（含 SHA256SUMS）→ 提交更新清单到 main。签名密钥通过仓库
+Secrets（`ANDROID_KEYSTORE_*`）注入，本地签名密钥不进仓库。
+
+## 项目结构
+
+```
+core/                 Go 核心：本地 HTTP API + go:embed 内嵌 TV UI
+  cmd/hongguotv/      入口与内嵌资源（ui/、locales/）
+android/              Android 壳：WebView + 原生播放桥
+  app/src/mpv/        MPV 播放内核（libmpv + JNI 桥接）
+  app/src/main/       通用壳（服务、更新器、电视频道集成）
+tests/                Node 前端回归测试（508 项）
+docs/screenshots/     界面截图
+```
 
 ## 致谢
 
-播放协议、TV 页面框架与部分文档源自 [aston314/hongguo-tv](https://github.com/aston314/hongguo-tv)（MIT），播放内核基于 [mpv-android](https://github.com/mpv-android/mpv-android) 构建的 libmpv。感谢原作者的工作。
+- [aston314/hongguo-tv](https://github.com/aston314/hongguo-tv) — 原项目
+- [mpv-android](https://github.com/mpv-android/mpv-android) — libmpv 播放内核
+- 所有反馈问题的电视盒用户
+
+## 许可
+
+与上游项目保持一致。
