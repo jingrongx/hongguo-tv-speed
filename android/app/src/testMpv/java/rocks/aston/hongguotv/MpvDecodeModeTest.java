@@ -7,7 +7,7 @@ public class MpvDecodeModeTest {
     @Test public void newOrInvalidPreferenceUsesSafeAutomaticDecoding() {
         assertEquals(MpvDecodeMode.AUTOMATIC, MpvDecodeMode.stored(null));
         assertEquals(MpvDecodeMode.AUTOMATIC, MpvDecodeMode.stored("standard"));
-        assertEquals("auto-safe", MpvDecodeMode.stored(null).hwdec);
+        assertEquals("mediacodec-copy", MpvDecodeMode.stored(null).hwdec);
     }
     @Test public void softwareEscapeIsExplicitAndInvalidRequestsAreRejected() {
         assertEquals("no", MpvDecodeMode.stored("mpv_software").hwdec);

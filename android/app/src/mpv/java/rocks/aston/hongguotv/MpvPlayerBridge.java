@@ -3,6 +3,7 @@ package rocks.aston.hongguotv;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.Build;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -14,6 +15,7 @@ import android.widget.TextView;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import org.json.JSONObject;
 
 /** One libmpv client with explicit event fences between playback sessions. */
@@ -23,6 +25,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private final FrameLayout holder;
     private final SurfaceView surface;
     private final SharedPreferences preferences;
+    private MpvDecodeMemory decodeMemory;
+    // One small probe bitmap per broken-output scan: PixelCopy scales the
+    // presented surface into it, keeping the check off the decoder path.
+    private Bitmap probeBitmap;
+    private boolean probeInFlight;
     // Bridge calls may arrive from WebView threads while all player state is
     // serialized onto the main thread.
     private volatile Session session;
@@ -60,6 +67,8 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         // Set when this source already fell back from hardware to software
         // decoding, preventing a fallback loop on genuinely dead sources.
         boolean swFallback;
+        int greenProbes, greenStreak;
+        Runnable probe;
         long position, duration;
         long loadRequestedAt, fileLoadedAt, outputReadyAt;
         String decoder = "", state = "preparing";
@@ -78,6 +87,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     MpvPlayerBridge(WebView web, FrameLayout holder) {
         this.web = web; this.holder = holder;
         preferences = web.getContext().getSharedPreferences("hongguo_mpv_playback", Context.MODE_PRIVATE);
+        decodeMemory = new MpvDecodeMemory(preferences.getString(MpvDecodeMemory.STORAGE_KEY, null));
         surface = new SurfaceView(web.getContext());
         surface.setFocusable(false);
         surface.getHolder().addCallback(this);
@@ -114,7 +124,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public boolean safeStart() { return false; }
     @JavascriptInterface public void setDecoderMode(String value) {
         MpvDecodeMode mode = MpvDecodeMode.requested(value);
-        if (mode != null) preferences.edit().putString("mpv_decode_mode", mode.id).apply();
+        if (mode == null) return;
+        // An explicit choice is also the reset path: a firmware update may
+        // have fixed the vendor decoder, so forget the learned codecs.
+        preferences.edit().putString("mpv_decode_mode", mode.id).remove(MpvDecodeMemory.STORAGE_KEY).apply();
+        decodeMemory = new MpvDecodeMemory(null);
     }
 
     @JavascriptInterface public void showLicenses() {
@@ -172,6 +186,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             generation++;
             old.terminal = true;
             if (old.timeout != null) handler.removeCallbacks(old.timeout);
+            cancelProbe(old);
             old.player = null;
             installSession(new Session(generation, id, source, data, MpvDecodeMode.stored(decoderMode())));
             return;
@@ -330,6 +345,14 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                             target.output.loaded = true;
                             target.fileLoadedAt = SystemClock.uptimeMillis();
+                            // A codec this device could only present in software
+                            // skips the broken hardware attempt before any green
+                            // frame can reach the screen.
+                            if (target.mode == MpvDecodeMode.AUTOMATIC && !target.swFallback
+                                    && decodeMemory.isBroken(currentCodec(target))) {
+                                fail(target, "green_output");
+                                return;
+                            }
                             if (target.pendingSeek) { active.command(new String[]{"seek", Double.toString(target.position / 1000.0), "absolute+exact"}); target.pendingSeek = false; }
                             applyPlayState(target);
                             updateDiagnostic(target, null);
@@ -383,6 +406,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             target.outputReady = true;
             target.outputReadyAt = SystemClock.uptimeMillis();
             handler.removeCallbacks(target.timeout);
+            armGreenProbe(target);
             JSONObject detail = new JSONObject();
             try { detail.put("width", w).put("height", h); } catch (Exception ignored) {}
             // The shared adapter's frame event means presentation-ready here.
@@ -398,17 +422,109 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         try { target.player.setPropertyBoolean("pause", true); } catch (RuntimeException ignored) {}
         handler.removeCallbacks(target.timeout);
     }
+    /** Broken hardware output is provable only from the presented pixels. */
+    private static boolean greenProbeSupported() {
+        return Build.VERSION.SDK_INT >= 26;
+    }
+    private void armGreenProbe(Session target) {
+        cancelProbe(target);
+        if (!MpvGreenFramePolicy.probeApplies(target.mode == MpvDecodeMode.AUTOMATIC, target.swFallback,
+                target.outputReady, background, greenProbeSupported())) return;
+        target.greenProbes = 0;
+        target.greenStreak = 0;
+        target.probe = () -> probeGreenFrame(target);
+        handler.postDelayed(target.probe, MpvGreenFramePolicy.FIRST_PROBE_DELAY_MS);
+    }
+    private void cancelProbe(Session target) {
+        if (target.probe != null) { handler.removeCallbacks(target.probe); target.probe = null; }
+    }
+    private void releaseProbeBitmap() {
+        if (probeBitmap != null) { probeBitmap.recycle(); probeBitmap = null; }
+    }
+    private void probeGreenFrame(Session target) {
+        if (!greenProbeSupported()) return;
+        if (!current(target) || !target.outputReady || background) return;
+        if (target.player != null) {
+            Boolean paused = target.player.getPropertyBoolean("pause");
+            Boolean caching = target.player.getPropertyBoolean("paused-for-cache");
+            if ((paused != null && paused) || (caching != null && caching)) {
+                // The picture is not advancing; a probe would only waste budget.
+                if (MpvGreenFramePolicy.keepProbing(target.greenProbes))
+                    handler.postDelayed(target.probe, MpvGreenFramePolicy.PROBE_INTERVAL_MS);
+                return;
+            }
+            String hwdec = target.player.getPropertyString("hwdec-current");
+            if (hwdec == null || hwdec.isEmpty() || "no".equals(hwdec)) return;
+        }
+        if (probeInFlight) {
+            handler.postDelayed(target.probe, MpvGreenFramePolicy.PROBE_INTERVAL_MS);
+            return;
+        }
+        try {
+            probeInFlight = true;
+            requestPixelCopy(target);
+        } catch (RuntimeException ignored) {
+            probeInFlight = false;
+            releaseProbeBitmap();
+        }
+    }
+    /** Kept separate so class verification only touches PixelCopy on API 26+. */
+    private void requestPixelCopy(Session target) {
+        if (probeBitmap == null) probeBitmap = Bitmap.createBitmap(160, 90, Bitmap.Config.ARGB_8888);
+        Bitmap bitmap = probeBitmap;
+        android.view.PixelCopy.request(surface, bitmap, result -> {
+            probeInFlight = false;
+            if (!current(target) || !target.outputReady) { releaseProbeBitmap(); return; }
+            target.greenProbes++;
+            boolean broken = result == android.view.PixelCopy.SUCCESS
+                && MpvGreenFramePolicy.isBrokenFrame(sampleProbeBitmap(bitmap));
+            target.greenStreak = broken ? target.greenStreak + 1 : 0;
+            updateDiagnostic(target, null);
+            if (broken && MpvGreenFramePolicy.shouldFallback(target.greenStreak)) {
+                releaseProbeBitmap();
+                fail(target, "green_output");
+                return;
+            }
+            if (MpvGreenFramePolicy.keepProbing(target.greenProbes))
+                handler.postDelayed(target.probe, MpvGreenFramePolicy.PROBE_INTERVAL_MS);
+            else releaseProbeBitmap();
+        }, handler);
+    }
+    private static int[] sampleProbeBitmap(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) return new int[0];
+        int width = bitmap.getWidth(), height = bitmap.getHeight();
+        int[] all = new int[width * height];
+        bitmap.getPixels(all, 0, width, 0, 0, width, height);
+        return all;
+    }
+    private String currentCodec(Session target) {
+        if (target.player != null) {
+            String codec = target.player.getPropertyString("video-codec");
+            if (codec == null || codec.isEmpty()) codec = target.player.getPropertyString("video-format");
+            if (codec != null && !codec.isEmpty()) return codec;
+        }
+        return target.decoder;
+    }
+    private void learnBrokenCodec(Session target) {
+        String codec = MpvDecodeMemory.normalize(currentCodec(target));
+        if (codec.isEmpty() || !decodeMemory.learn(codec)) return;
+        preferences.edit().putString(MpvDecodeMemory.STORAGE_KEY, decodeMemory.store()).apply();
+    }
     private void fail(Session target, String kind) {
         fail(target, kind, 0);
     }
     private void fail(Session target, String kind, int code) {
         if (!current(target)) return;
+        cancelProbe(target);
         // Hardware decoding must never leave a dead screen: when the decoder
-        // fails to start or dies mid-play, retry the same source in software
-        // decoding once. Only a software failure is reported upward.
+        // fails to start, dies mid-play, or provably presents a broken
+        // (solid green) picture, retry the same source in software decoding
+        // once. Only a software failure is reported upward.
         if (target.mode == MpvDecodeMode.AUTOMATIC && !target.swFallback
                 && (kind.equals("initialization") || kind.equals("native_event")
-                    || kind.equals("media") || kind.equals("output_timeout"))) {
+                    || kind.equals("media") || kind.equals("output_timeout")
+                    || kind.equals("green_output"))) {
+            if (kind.equals("green_output")) learnBrokenCodec(target);
             JSONObject detail = new JSONObject();
             try { detail.put("kind", "hwdec_fallback").put("code", code); } catch (Exception ignored) {}
             event(target, "info", detail);
@@ -460,6 +576,9 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 .put("output_messages", target.output.messages())
                 .put("open_requested", target.output.openRequested)
                 .put("file_loaded", target.output.loaded)
+                .put("green_probe", target.greenStreak > 0 ? "broken" : target.greenProbes > 0 ? "ok" : "idle")
+                .put("green_probe_count", target.greenProbes)
+                .put("learned_sw_codecs", decodeMemory.store())
                 .put("last_stop_fence_ms", lastStopFenceMs)
                 .put("end_file_seen", target.output.endFileSeen);
             if (target.loadRequestedAt > 0) {
@@ -638,6 +757,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     private void dispose(Session target) {
         if (target.timeout != null) handler.removeCallbacks(target.timeout);
+        cancelProbe(target);
         MPVLib old = target.player; target.player = null;
         if (old != null) {
             try {
@@ -657,6 +777,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (old != null) {
             old.terminal = true;
             if (old.timeout != null) handler.removeCallbacks(old.timeout);
+            cancelProbe(old);
             old.player = null;
         }
         if (id == null) transition.clear();
@@ -752,11 +873,13 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (active != null) {
             active.terminal = true;
             if (active.timeout != null) handler.removeCallbacks(active.timeout);
+            cancelProbe(active);
         }
         stopFence.clear(); stoppingPlayer = null; stopTimeout = null;
         surface.getHolder().removeCallback(this);
         MPVLib old = player; player = null; playerSurfaceAttached = false;
         surfaceReady = false;
+        releaseProbeBitmap();
         if (old != null) { try { old.destroy(); } catch (RuntimeException ignored) {} }
         holder.setAlpha(0f); holder.setVisibility(View.GONE);
     }

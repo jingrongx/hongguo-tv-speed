@@ -1290,8 +1290,23 @@
   function firstRadarGrowthRow() { return firstVisible('.radar-growth-row'); }
   function firstRankSubtab() { return firstVisible('.rank-subtab'); }
   function firstRankFilterToggle() { return firstVisible('#rank-filter-toggle'); }
+  // Collapsed rank filters hide #rank-panels with display:none, but the
+  // chips carry no .is-hidden class, so the DOM scan still finds them.
+  // Focusing an unrendered chip would be rejected by goFocus and swallow
+  // the remote key, so only chips that actually render count here. The
+  // selected chip wins when several rows are expanded.
+  function firstRenderedRankPanel() {
+    var nodes = focusables('.rank-panel');
+    var fallback = null;
+    for (var i = 0; i < nodes.length; i += 1) {
+      if (!nodes[i].getClientRects().length) continue;
+      if (nodes[i].classList.contains('is-active')) return nodes[i];
+      if (!fallback) fallback = nodes[i];
+    }
+    return fallback;
+  }
   function firstRankFilterEntry() {
-    return firstVisible('.rank-panel') || firstRankFilterToggle() || firstVisible('.rank-subtab.is-active') || firstRankTab();
+    return firstRenderedRankPanel() || firstRankFilterToggle() || firstVisible('.rank-subtab.is-active') || firstRankTab();
   }
   function firstRankRow() { return firstVisible('.rank-row'); }
   function firstNewTab() { return firstVisible('.new-tab'); }
@@ -1846,8 +1861,8 @@
     }
     if (zone === 'rankFilters') {
       if (direction === 'up') return firstVisible('.rank-subtab.is-active') || firstVisible('.rank-tab.is-active') || activeSidebar();
-      if (direction === 'down') return firstVisible('.rank-panel') || firstRankRow();
-      if (direction === 'right') return firstVisible('.rank-panel') || firstRankRow();
+      if (direction === 'down') return firstRenderedRankPanel() || firstRankRow();
+      if (direction === 'right') return firstRenderedRankPanel() || firstRankRow();
       if (direction === 'left') return firstVisible('.rank-subtab.is-active') || activeSidebar();
       return null;
     }
@@ -1857,7 +1872,7 @@
       // hands over to the drama rows instead of trapping the remote.
       if (direction === 'down') return moveWithinZone(zone, current, direction) || firstRankRow();
       if (direction === 'left') return activeSidebar();
-      if (direction === 'right') return firstRankFilterToggle() || firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || firstRankRow();
+      if (direction === 'right') return firstRankFilterToggle() || firstRenderedRankPanel() || firstRankRow();
       return moveWithinZone(zone, current, direction);
     }
     if (zone === 'rankItems') {
@@ -2634,7 +2649,24 @@
   function revealControls() {
     controlsManuallyHidden = false;
     shell.classList.remove('is-controls-hidden');
+    claimControlBarFocus();
     scheduleControlsHide();
+  }
+  // A visible control bar owns the remote: whenever it appears, focus parks
+  // on it so direction keys drive the controls instead of silently stepping
+  // episodes on a surface the user cannot see highlighted. Callers that need
+  // focus elsewhere goFocus after revealControls and simply win.
+  function claimControlBarFocus() {
+    if (!isPlaybackPage() || coreConnectionModalOpen || (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen) ||
+        detailModalOpen || (typeof actorWorksOpen !== 'undefined' && actorWorksOpen) || confirmOpen ||
+        playerOptionsOpen || discussionOpen || (endRecommendations && endRecommendations.isOpen())) return;
+    var current = remoteFocusTarget();
+    if (!current || current.tagName === 'INPUT') return;
+    if (['controls', 'timeline'].indexOf(zoneOf(current)) >= 0) return;
+    var anchor = lastPlaybackControl && document.contains(lastPlaybackControl) && !lastPlaybackControl.disabled
+      ? lastPlaybackControl
+      : firstVisible('.playback-buttons .dial-button');
+    goFocus(anchor);
   }
   function hideControls() {
     clearTimeout(controlsTimer);
@@ -3217,7 +3249,6 @@
       // The player page (history/search entries) skips this branch so its
       // own back flow — hide controls, then leavePlayer — stays reachable.
       revealControls();
-      goFocus(document.querySelector('.hero-feed-focus') || firstContentFocus());
     }
     else if (isPlaybackPage() && zoneOf(current) !== 'sidebar' && !shell.classList.contains('is-controls-hidden')) hideControls();
     else if (pageMode() === 'player') leavePlayer();
@@ -6256,7 +6287,7 @@
     panel.classList.toggle('is-collapsed', !expanded);
     toggle.textContent = expanded ? uiText('search.collapseFilter', '收起筛选') : uiText('search.expandFilter', '展开筛选');
     toggle.setAttribute('aria-expanded', String(expanded));
-    if (focusAfter !== false) goFocus(expanded ? firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || toggle : toggle);
+    if (focusAfter !== false) goFocus(expanded ? firstRenderedRankPanel() || toggle : toggle);
   }
 
   function renderMessage(container, className, message) {

@@ -116,6 +116,8 @@
         add(tr('diagnostic.droppedFrames'), tr('diagnostic.decodeRender', { decode: metric(native.decoder_frame_drop_count), render: metric(native.frame_drop_count) }));
         if (typeof native.demuxer_cache_duration === 'number' && isFinite(native.demuxer_cache_duration) && native.demuxer_cache_duration >= 0) add(tr('diagnostic.cacheDuration'), clock(native.demuxer_cache_duration));
         if (typeof native.avsync === 'number' && isFinite(native.avsync)) add(tr('diagnostic.avOffset'), Math.round(native.avsync * 1000) + ' ms');
+        if (native.green_probe && native.green_probe !== 'idle') add(tr('diagnostic.greenProbe'), native.green_probe === 'broken' ? tr('diagnostic.greenProbeBroken') : tr('diagnostic.greenProbeOk'));
+        if (native.learned_sw_codecs) add(tr('diagnostic.learnedSwCodecs'), text(native.learned_sw_codecs, 60));
         if (native.output_messages) add(tr('diagnostic.outputHint'), text(native.output_messages, 90));
       }
     }

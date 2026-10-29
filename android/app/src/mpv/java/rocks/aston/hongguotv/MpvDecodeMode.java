@@ -5,9 +5,10 @@ enum MpvDecodeMode {
     // Automatic decoding (hardware via mediacodec-copy) is the default: on
     // most TVs it is far smoother, and the rebuilt mpv stack no longer
     // trips the vendor codec service on this generation of devices. When a
-    // decoder still fails to start or dies mid-play, the bridge falls back
-    // to software decoding for that source once before giving up, so the
-    // user sees a working picture instead of an error.
+    // decoder fails to start, dies mid-play, or provably presents a solid
+    // green picture, the bridge falls back to software decoding for that
+    // source once before giving up, and remembers the codec for later
+    // sessions so later episodes skip the broken attempt entirely.
     AUTOMATIC("mpv_auto", "mediacodec-copy"), SOFTWARE("mpv_software", "no");
 
     final String id, hwdec;

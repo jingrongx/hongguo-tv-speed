@@ -7,18 +7,18 @@ public class UpdatePolicyTest {
     @Test public void editionsUseIndependentChannelsAndCannotCrossInstall() {
         assertTrue(UpdatePolicy.manifestUrl("standard").endsWith("/update.json"));
         assertTrue(UpdatePolicy.manifestUrl("mpv").endsWith("/update-mpv.json"));
-        UpdatePolicy.validateVariant("standard", "", "rocks.aston.hongguotv", 23);
-        UpdatePolicy.validateVariant("mpv", "mpv", "rocks.aston.hongguotv.mpv", 23);
-        for (String[] values : new String[][]{{"mpv", "", "rocks.aston.hongguotv.mpv"},
-                {"standard", "mpv", "rocks.aston.hongguotv"},
-                {"mpv", "mpv", "rocks.aston.hongguotv"}}) {
+        UpdatePolicy.validateVariant("standard", "", "com.jingrongx.hongguotv", 23);
+        UpdatePolicy.validateVariant("mpv", "mpv", "com.jingrongx.hongguotv.mpv", 23);
+        for (String[] values : new String[][]{{"mpv", "", "com.jingrongx.hongguotv.mpv"},
+                {"standard", "mpv", "com.jingrongx.hongguotv"},
+                {"mpv", "mpv", "com.jingrongx.hongguotv"}}) {
             try { UpdatePolicy.validateVariant(values[0], values[1], values[2], 23); fail("cross-edition accepted"); }
             catch (IllegalArgumentException expected) { /* expected */ }
         }
-        String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v0.2.47/hongguo-tv-mpv-0.2.47.apk";
+        String url = "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.47/hongguo-tv-speed-mpv-0.2.47.apk";
         String sha = new String(new char[64]).replace('\0', 'a');
-        UpdatePolicy.validate("rocks.aston.hongguotv.mpv", 2, "0.2.47", 23, 100, sha, url, "rocks.aston.hongguotv.mpv", 1, "0.2.46");
-        try { UpdatePolicy.validate("rocks.aston.hongguotv", 49, "0.2.47", 23, 100, sha, url, "rocks.aston.hongguotv", 48, "0.2.46"); fail("MPV URL accepted by standard"); }
+        UpdatePolicy.validate("com.jingrongx.hongguotv.mpv", 2, "0.2.47", 23, 100, sha, url, "com.jingrongx.hongguotv.mpv", 1, "0.2.46");
+        try { UpdatePolicy.validate("com.jingrongx.hongguotv", 49, "0.2.47", 23, 100, sha, url, "com.jingrongx.hongguotv", 48, "0.2.46"); fail("MPV URL accepted by standard"); }
         catch (IllegalArgumentException expected) { /* expected */ }
     }
     @Test public void checkThrottleAndClockChanges() {
@@ -49,9 +49,9 @@ public class UpdatePolicyTest {
         return UpdatePolicy.matchingArchive("app", 8, "app", code, name, code, name, left, right);
     }
     @Test public void manifestRejectsForeignOrMutableDownloadTargets() {
-        String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v0.2.7/hongguo-tv-0.2.7.apk";
+        String url = "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.7/hongguo-tv-speed-0.2.7.apk";
         UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, new String(new char[64]).replace('\0', 'a'), url, "app", 8, "0.2.6");
-        for (String bad : new String[]{url.replace("github.com", "github.com.evil.test"), url.replace("download/v0.2.7", "latest/download"), url + "?token=x", url.replace("hongguo-tv-releases", "private-source")}) {
+        for (String bad : new String[]{url.replace("github.com", "github.com.evil.test"), url.replace("download/v0.2.7", "latest/download"), url + "?token=x", url.replace("hongguo-tv-speed", "private-source")}) {
             try { UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, new String(new char[64]).replace('\0', 'a'), bad, "app", 8, "0.2.6"); fail(bad); }
             catch (IllegalArgumentException expected) { /* expected */ }
         }
@@ -59,11 +59,11 @@ public class UpdatePolicyTest {
     @Test public void staleOrInconsistentMetadataNeverClaimsCurrentVersion() {
         String sha = new String(new char[64]).replace('\0', 'a');
         for (String name : new String[]{"0.2.6", "0.2.8"}) {
-            String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v" + name + "/hongguo-tv-" + name + ".apk";
+            String url = "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v" + name + "/hongguo-tv-speed-" + name + ".apk";
             try { UpdatePolicy.validate("app", name.equals("0.2.6") ? 8 : 9, name, 23, 100, sha, url, "app", 9, "0.2.7"); fail("stale metadata accepted"); }
             catch (IllegalArgumentException expected) { /* Try the next transport. */ }
         }
-        String url = "https://github.com/aston314/hongguo-tv-releases/releases/download/v0.2.7/hongguo-tv-0.2.7.apk";
+        String url = "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.7/hongguo-tv-speed-0.2.7.apk";
         UpdatePolicy.validate("app", 9, "0.2.7", 23, 100, sha, url, "app", 9, "0.2.7");
     }
 }
