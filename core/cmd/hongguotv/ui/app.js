@@ -3119,6 +3119,7 @@
     if (accountKeypadOpen()) numericKeypad.close('background');
     if (smsVerification) smsVerification.stop();
     var video = document.getElementById('hero-video');
+    rememberResumeSnapshot();
     var preparing = playbackInfoRequest || playbackPrefetchHandoff || activePlayback && !video.getAttribute('src');
     applicationInBackground = true;
     resetEndRecommendations();
@@ -5297,13 +5298,51 @@
     }
     armPlaybackMenuHint();
     autoEnterChain = 1;
-    // Official-app style launch: every cold start plays episode 1 of a drama
-    // picked pseudo-randomly from the head of the feed, never resuming the
-    // previously watched episode position and never repeating the drama that
-    // was playing when the app was last closed.
+    // Cold start resumes exactly where the last session left off: the
+    // remembered drama is located in the feed (or slotted in first) and
+    // playback continues from the stored episode and position. Without a
+    // snapshot — first launch or cleared storage — the pseudo-random pick
+    // from the head of the feed still applies.
+    var resume = restoreResumeSnapshot();
+    if (resume) {
+      var resumeIndex = -1;
+      for (var i = 0; i < feedItems.length; i++) {
+        if (String(feedItems[i].series_id) === String(resume.series_id)) { resumeIndex = i; break; }
+      }
+      if (resumeIndex < 0) { feedItems.unshift(resume.item); resumeIndex = 0; }
+      updateFeedCounter();
+      playFeedItem(resumeIndex, resume.episode, resume.position);
+      return;
+    }
     playFeedItem(pickAutoStartIndex(), 1, 0);
   }
 
+  // Session resume: the drama, episode and exact position playing when the
+  // app was last left (exit gesture or backgrounded) become the cold-start
+  // point of the next session. Best effort — without a snapshot the random
+  // head-of-feed pick still applies.
+  function rememberResumeSnapshot() {
+    if (!activePlayback || !activePlayback.item || !activePlayback.item.series_id) return;
+    var video = document.getElementById('hero-video');
+    var position = activePlayback.started ? Math.max(0, Number(video && video.currentTime) || 0) : (activePlayback.position || 0);
+    try {
+      window.localStorage.setItem('hongguo.resume', JSON.stringify({
+        series_id: activePlayback.item.series_id,
+        episode: activePlayback.episode || 1,
+        position: Math.floor(position),
+        item: activePlayback.item
+      }));
+    } catch (error) { /* Private-mode storage: resume is best effort. */ }
+  }
+  function restoreResumeSnapshot() {
+    try {
+      var raw = window.localStorage.getItem('hongguo.resume');
+      if (!raw) return null;
+      var snap = JSON.parse(raw);
+      if (!snap || !snap.series_id || !snap.item || !snap.item.series_id) return null;
+      return snap;
+    } catch (error) { return null; }
+  }
   function pickAutoStartIndex() {
     var pool = feedItems.slice(0, Math.min(8, feedItems.length));
     var lastSeries = '';
