@@ -1853,7 +1853,9 @@
     }
     if (zone === 'rankSubnav') {
       if (direction === 'up') return moveWithinZone(zone, current, direction) || firstVisible('.rank-tab.is-active');
-      if (direction === 'down') return moveWithinZone(zone, current, direction);
+      // The list sits to the right of the category rail: the last category
+      // hands over to the drama rows instead of trapping the remote.
+      if (direction === 'down') return moveWithinZone(zone, current, direction) || firstRankRow();
       if (direction === 'left') return activeSidebar();
       if (direction === 'right') return firstRankFilterToggle() || firstVisible('.rank-panel.is-active') || firstVisible('.rank-panel') || firstRankRow();
       return moveWithinZone(zone, current, direction);
