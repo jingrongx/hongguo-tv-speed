@@ -18,6 +18,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Manual re-runs resolve the version from the latest tag, so the
+          # full history including tags must be present.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -57,7 +61,12 @@ jobs:
         id: ver
         run: |
           set -e
-          V="${GITHUB_REF_NAME#v}"
+          case "$GITHUB_REF_NAME" in
+            v*) V="${GITHUB_REF_NAME#v}" ;;
+            *) # Manual dispatch runs on a branch: fall back to the latest tag
+               # so a release body/assets can be refreshed without re-tagging.
+               V=$(git describe --tags --abbrev=0 | sed 's/^v//') ;;
+          esac
           CODE=$(echo "$V" | awk -F. '{print $1*10000 + $2*100 + $3}')
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "version=$V" >> "$GITHUB_OUTPUT"
@@ -180,6 +189,23 @@ jobs:
           "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/standard/release/app-standard-release.apk | head -2
           "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/mpv/release/app-mpv-release.apk | head -2
 
+      - name: Extract release notes
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -e
+          test -n "$VERSION"
+          mkdir -p stage
+          python3 scripts/extract_release_notes.py "$VERSION" stage/release_notes.md
+          # Fallback: summarize the commits since the previous tag so the
+          # notes always describe what actually shipped in this build.
+          if [ ! -s stage/release_notes.md ]; then
+            PREV=$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || true)
+            if [ -n "$PREV" ]; then RANGE="$PREV..v$VERSION"; else RANGE="v$VERSION"; fi
+            git log --format='- %s' "$RANGE" | grep -v 'ci: update manifests' > stage/release_notes.md || true
+            [ -s stage/release_notes.md ] || echo '- 稳定性修复与体验优化。' > stage/release_notes.md
+          fi
+
       - name: Stage speed-edition assets and manifests
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -190,38 +216,35 @@ jobs:
           mkdir -p stage
           cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-tv-speed-mpv-$VERSION.apk"
           cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
-          MPV_SHA=$(sha256sum "stage/hongguo-tv-speed-mpv-$VERSION.apk" | cut -d' ' -f1)
-          MPV_SIZE=$(stat -c%s "stage/hongguo-tv-speed-mpv-$VERSION.apk")
-          STD_SHA=$(sha256sum "stage/hongguo-tv-speed-$VERSION.apk" | cut -d' ' -f1)
-          STD_SIZE=$(stat -c%s "stage/hongguo-tv-speed-$VERSION.apk")
-          {
-            echo '{'
-            echo '  "schema": 1,'
-            echo "  \"version_code\": $CODE,"
-            echo '  "min_sdk": 23,'
-            echo "  \"version_name\": \"$VERSION\","
-            echo '  "package_name": "com.jingrongx.hongguotv.mpv",'
-            echo "  \"size\": $MPV_SIZE,"
-            echo "  \"sha256\": \"$MPV_SHA\","
-            echo '  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v'"$VERSION"'/hongguo-tv-speed-mpv-'"$VERSION"'.apk",'
-            echo '  "release_notes": "极速版",'
-            echo '  "variant": "mpv"'
-            echo '}'
-          } > stage/update-mpv.json
-          {
-            echo '{'
-            echo '  "schema": 1,'
-            echo "  \"version_code\": $CODE,"
-            echo '  "min_sdk": 23,'
-            echo "  \"version_name\": \"$VERSION\","
-            echo '  "package_name": "com.jingrongx.hongguotv",'
-            echo "  \"size\": $STD_SIZE,"
-            echo "  \"sha256\": \"$STD_SHA\","
-            echo '  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v'"$VERSION"'/hongguo-tv-speed-'"$VERSION"'.apk",'
-            echo '  "release_notes": "极速版",'
-            echo '  "variant": "standard"'
-            echo '}'
-          } > stage/update.json
+          python3 - "$VERSION" "$CODE" <<'PY'
+          import hashlib, io, json, sys
+          version, code = sys.argv[1], int(sys.argv[2])
+          with io.open('stage/release_notes.md', encoding='utf-8') as handle:
+              notes = handle.read().strip()
+          base = 'https://github.com/jingrongx/hongguo-tv-speed/releases/download/v' + version + '/'
+          variants = (
+              ('mpv', 'com.jingrongx.hongguotv.mpv', 'hongguo-tv-speed-mpv-' + version + '.apk', 'update-mpv.json'),
+              ('standard', 'com.jingrongx.hongguotv', 'hongguo-tv-speed-' + version + '.apk', 'update.json'),
+          )
+          for variant, package, artifact, name in variants:
+              with open('stage/' + artifact, 'rb') as handle:
+                  blob = handle.read()
+              manifest = {
+                  'schema': 1,
+                  'version_code': code,
+                  'min_sdk': 23,
+                  'version_name': version,
+                  'package_name': package,
+                  'size': len(blob),
+                  'sha256': hashlib.sha256(blob).hexdigest(),
+                  'download_url': base + artifact,
+                  'release_notes': notes,
+                  'variant': variant,
+              }
+              with io.open('stage/' + name, 'w', encoding='utf-8', newline='\n') as handle:
+                  json.dump(manifest, handle, ensure_ascii=False, indent=2)
+                  handle.write('\n')
+          PY
           sha256sum stage/*.apk > stage/SHA256SUMS.txt
           python3 -c "import json; json.load(open('stage/update-mpv.json')); json.load(open('stage/update.json')); print('manifests valid')"
 
@@ -235,12 +258,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          {
+            cat stage/release_notes.md
+            echo
+            echo "**MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk"
+            echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
+          } > stage/release_body.md
           gh release create "v$VERSION" --title "红果短剧 TV 极速版 v$VERSION" \
-            --notes "极速版 $VERSION：沉浸式电视交互、整集预下载无缝换集、软件解码稳定运行。
-
-          **MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk
-          **标准版**：hongguo-tv-speed-$VERSION.apk" --draft=false --prerelease=false           || gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+            --notes-file stage/release_body.md --draft=false --prerelease=false \
+            || gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
           gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+          # Re-runs must refresh a stale body, not only the assets.
+          gh release edit "v$VERSION" --notes-file stage/release_body.md
 
       - name: Publish update manifests to main
         env:

@@ -8,13 +8,25 @@
 
 ## 界面一览
 
-| 推荐流播放 | 悬浮控制 Dock |
+| 沉浸播放（全屏连播） | 悬浮控制 Dock |
 | --- | --- |
-| ![推荐流播放](docs/screenshots/playback.png) | ![悬浮控制 Dock](docs/screenshots/control-dock.png) |
+| ![沉浸播放](docs/screenshots/playback.png) | ![悬浮控制 Dock](docs/screenshots/control-dock.png) |
 
-| 更多功能网格 | 首次启动指南 |
+| 更多功能网格 | 排行榜 |
 | --- | --- |
-| ![更多功能网格](docs/screenshots/more-grid.png) | ![首次启动指南](docs/screenshots/first-run-guide.png) |
+| ![更多功能网格](docs/screenshots/more-grid.png) | ![排行榜](docs/screenshots/rank.png) |
+
+| 找剧 | 剧集详情与选集 |
+| --- | --- |
+| ![找剧](docs/screenshots/search.png) | ![剧集详情](docs/screenshots/detail.png) |
+
+| 观看历史 | 设置与播放解码 |
+| --- | --- |
+| ![观看历史](docs/screenshots/history.png) | ![设置与播放解码](docs/screenshots/settings.png) |
+
+| 我的账号与云同步 | 首次启动指南 |
+| --- | --- |
+| ![我的账号](docs/screenshots/account.png) | ![首次启动指南](docs/screenshots/first-run-guide.png) |
 
 ## 特性
 
