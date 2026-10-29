@@ -8255,7 +8255,7 @@
       // Keep the active TV focus node alive while native checking/download runs.
       check.disabled = !data.supported;
       check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' || data.state === 'installing' ? 'true' : 'false');
-      check.textContent = data.state === 'checking' ? uiText('ui.checking', '检查中…') : data.manual_install ? uiText('ui.checkUpdate', '检查更新') : !data.desktop && data.state === 'ready' ? uiText('ui.installUpdate', '安装更新') : !data.desktop && data.state === 'available' ? uiText('ui.viewUpdate', '查看更新 {version}', { version: data.latest_version }) : uiText('ui.checkUpdate', '检查更新');
+      check.textContent = data.state === 'checking' ? uiText('ui.checking', '检查中…') : data.manual_install ? uiText('ui.checkUpdate', '检查更新') : !data.desktop && data.state === 'downloading' ? uiText('ui.downloadingPercent', '下载中 {percent}%', { percent: data.total ? Math.floor(data.downloaded * 100 / data.total) : 0 }) : !data.desktop && data.state === 'ready' ? uiText('ui.installUpdate', '安装更新') : !data.desktop && data.state === 'available' ? uiText('ui.viewUpdate', '查看更新 {version}', { version: data.latest_version }) : uiText('ui.checkUpdate', '检查更新');
       if (webosShell && data.manual_install) {
         var webosNotes = document.getElementById('desktop-update-notes');
         webosNotes.classList.toggle('is-hidden', !data.latest_version);

@@ -103,6 +103,7 @@ final class AppUpdater {
     final class Bridge {
         @JavascriptInterface public String getStatus() { return host.trusted() ? snapshot : "{}"; }
         @JavascriptInterface public void check() { if (host.trusted()) activity.runOnUiThread(() -> checkNow(true)); }
+        void checkAuto() { activity.runOnUiThread(() -> checkNow(false)); }
         @JavascriptInterface public void install() {
             if (host.trusted()) activity.runOnUiThread(() -> {
                 if (latest != null && "ready".equals(state)) launchInstaller(latest);
@@ -112,6 +113,9 @@ final class AppUpdater {
             if (host.trusted()) activity.runOnUiThread(() -> { promptAllowed = allowed; maybePrompt(); });
         }
     }
+
+    private final android.os.Handler autoCheckHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final long AUTO_CHECK_REPEAT_MILLIS = 6L * 60 * 60 * 1000;
 
     void start() {
         if (started || destroyed) return;
@@ -123,6 +127,22 @@ final class AppUpdater {
             preferences.edit().putLong("last_auto_attempt", now).apply();
             checkNow(false);
         }
+        scheduleNextAutoCheck();
+    }
+
+    /**
+     * Long-running TVs stay current: re-check every six hours (the startup
+     * gate keeps the first check to once per day per install policy). Every
+     * automatic check is silent — a new version just starts downloading.
+     */
+    private void scheduleNextAutoCheck() {
+        if (destroyed) return;
+        autoCheckHandler.postDelayed(() -> {
+            if (destroyed) return;
+            preferences.edit().putLong("last_auto_attempt", System.currentTimeMillis()).apply();
+            checkNow(false);
+            scheduleNextAutoCheck();
+        }, AUTO_CHECK_REPEAT_MILLIS);
     }
 
     private void cleanupCache() {
@@ -186,9 +206,30 @@ final class AppUpdater {
                 else if (response.code > BuildConfig.VERSION_CODE && verifiedApkCode == response.code) { state = "ready"; message = "更新包已验证，可继续安装"; }
                 else if (response.code > BuildConfig.VERSION_CODE) { state = "available"; message = "发现新版本 " + response.name; }
                 else { state = "current"; message = "已是最新版本"; }
-                publish(); maybePrompt();
+                publish();
+                // Manual checks keep the dialog; automatic checks silently
+                // start the background download for a ready-to-install state.
+                if (manualPrompt) maybePrompt(); else maybeAutoDownload();
             });
         });
+    }
+
+    /** Automatic checks download immediately; nothing is shown until done. */
+    private void maybeAutoDownload() {
+        if (!"available".equals(state) || latest == null || destroyed || downloading) return;
+        final Manifest target = latest;
+        beginDownload(target, true);
+    }
+
+    /** One gentle notice when a verified update is waiting for install. */
+    private void maybeReadyPrompt(Manifest target) {
+        if (preferences.getInt("dismissed_ready_code", 0) >= target.code) return;
+        if (!canShow()) return;
+        AlertDialog prompt = new AlertDialog.Builder(activity).setTitle("更新已就绪 " + target.name)
+            .setMessage("新版本已下载并校验完成。覆盖升级保留账号和记录；稍后也可以在设置中安装。")
+            .setNegativeButton("稍后", (d, which) -> preferences.edit().putInt("dismissed_ready_code", target.code).apply())
+            .setPositiveButton("立即安装", (d, which) -> launchInstaller(target)).create();
+        show(prompt, AlertDialog.BUTTON_POSITIVE);
     }
 
     private String readManifest(String source, int epoch) throws Exception {
@@ -205,6 +246,11 @@ final class AppUpdater {
     }
 
     private HttpURLConnection open(String source, int epoch) throws Exception {
+        return open(source, epoch, 0);
+    }
+
+    /** Opens the download; resumeFrom &gt; 0 asks the server for the remaining bytes. */
+    private HttpURLConnection open(String source, int epoch, long resumeFrom) throws Exception {
         URL url = new URL(source);
         for (int redirect = 0; redirect < 6; redirect++) {
             ensureValid(epoch);
@@ -216,6 +262,7 @@ final class AppUpdater {
             request.setRequestProperty("Cache-Control", "no-cache");
             request.setRequestProperty("Accept-Encoding", "identity");
             request.setRequestProperty("User-Agent", "HongguoTV/" + BuildConfig.VERSION_NAME);
+            if (resumeFrom > 0) request.setRequestProperty("Range", "bytes=" + resumeFrom + "-");
             int code;
             try { code = request.getResponseCode(); }
             catch (Exception failure) { request.disconnect(); throw failure; }
@@ -225,7 +272,7 @@ final class AppUpdater {
                 if (location == null) throw new IOException("下载重定向缺少地址");
                 url = new URL(url, location); continue;
             }
-            if (code != 200) { request.disconnect(); throw new IOException("更新服务返回 HTTP " + code); }
+            if (code != 200 && code != 206) { request.disconnect(); throw new IOException("更新服务返回 HTTP " + code); }
             return request;
         }
         throw new IOException("更新连接重定向次数过多");
@@ -269,14 +316,18 @@ final class AppUpdater {
     }
 
     private void beginDownload(Manifest target) {
+        beginDownload(target, false);
+    }
+
+    private void beginDownload(Manifest target, boolean silent) {
         // The confirmation is dismissed by Android after its click listener returns.
         activity.getWindow().getDecorView().post(() -> {
             if (destroyed || downloading) return;
             if (dialog != null) { AlertDialog old = dialog; dialog = null; old.dismiss(); }
             downloading = true; downloaded = 0; state = "downloading"; message = "正在下载 " + target.name; publish();
             final int epoch = generation.incrementAndGet();
-            showDownloadProgress();
-            worker.execute(() -> download(target, epoch));
+            if (!silent) showDownloadProgress();
+            worker.execute(() -> download(target, epoch, silent));
         });
     }
 
@@ -295,6 +346,15 @@ final class AppUpdater {
     }
 
     private void download(Manifest target, int epoch) {
+        download(target, epoch, false);
+    }
+
+    /**
+     * Silent background downloads (automatic checks) never raise dialogs and
+     * never raise failure notices: they just publish state for the settings
+     * page and retry on the next periodic check.
+     */
+    private void download(Manifest target, int epoch, boolean silent) {
         String error = "下载暂时不可用";
         try {
             directory.mkdirs();
@@ -306,22 +366,32 @@ final class AppUpdater {
             for (int sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
                 String source = sources[sourceIndex];
                 ensureValid(epoch);
-                partial.delete();
+                // Resume from the retained partial file; every mirror serves
+                // the same verified bytes and the archive check below still
+                // guards integrity end to end. Only a completed download with
+                // a bad archive discards the partial data.
+                final long from = partial.isFile() && partial.length() > 0 && partial.length() < target.bytes
+                        ? partial.length() : 0;
                 final boolean fallback = sourceIndex > 0;
                 activity.runOnUiThread(() -> {
                     if (!valid(epoch)) return;
-                    downloaded = 0; message = fallback ? "当前线路失败，正在尝试下一条更新线路…" : "正在连接更新服务…"; publish();
-                    if (progress != null) progress.setIndeterminate(true);
+                    downloaded = from;
+                    message = fallback ? "当前线路失败，正在尝试下一条更新线路…"
+                            : from > 0 ? "正在从上次进度继续下载…" : "正在连接更新服务…";
+                    publish();
+                    if (progress != null) { progress.setIndeterminate(from <= 0); if (from > 0) progress.setProgress((int) (from * 100 / target.bytes)); }
                     if (progressText != null) progressText.setText(message);
                 });
                 try {
-                    HttpURLConnection request = open(source, epoch);
+                    HttpURLConnection request = open(source, epoch, from);
+                    boolean resumed = request.getResponseCode() == 206;
                     try (InputStream stream = request.getInputStream()) {
                         long length = -1;
                         String lengthHeader = request.getHeaderField("Content-Length");
                         if (lengthHeader != null) length = Long.parseLong(lengthHeader);
-                        if (length > 0 && length != target.bytes) throw new IOException("安装包大小不匹配");
-                        UpdateFiles.copyChecked(stream, partial, target.bytes, target.sha256, new UpdateFiles.Monitor() {
+                        if (length > 0 && length != target.bytes - (resumed ? from : 0)) throw new IOException("安装包大小不匹配");
+                        final long base = resumed ? from : 0;
+                        UpdateFiles.writeChecked(stream, partial, base, target.bytes, target.sha256, new UpdateFiles.Monitor() {
                             private long lastProgress;
                             public void check() throws IOException { ensureValid(epoch); }
                             public void progress(long bytes) {
@@ -335,17 +405,22 @@ final class AppUpdater {
                     if (!partial.renameTo(apk)) throw new IOException("无法保存更新安装包");
                     verifiedApkCode = target.code;
                     completed(target, epoch); return;
-                } catch (Exception failure) { partial.delete(); error = friendly(failure); }
+                } catch (Exception failure) {
+                    error = friendly(failure);
+                    // The partial file stays for the next resume, unless the
+                    // archive itself turned out to be corrupt.
+                    if (partial.isFile() && partial.length() >= target.bytes) partial.delete();
+                }
             }
             throw new IOException(error);
         } catch (Exception failure) {
-            partial.delete();
+            if (partial.isFile() && partial.length() >= target.bytes) partial.delete();
             apk.delete();
             final String text = friendly(failure);
             activity.runOnUiThread(() -> {
                 if (!valid(epoch)) return;
                 downloading = false; dismissDialog(); state = "error"; message = "下载失败：" + text; publish();
-                showFailure(message);
+                if (!silent) showFailure(message);
             });
         }
     }
@@ -355,7 +430,7 @@ final class AppUpdater {
             if (!valid(epoch)) return;
             downloading = false; downloaded = target.bytes; verifiedApkCode = target.code; state = "ready"; message = "安装包已验证，可以安装";
             latest = target; dismissDialog(); publish();
-            if (host.foreground()) launchInstaller(target);
+            maybeReadyPrompt(target);
         });
     }
 
@@ -452,6 +527,7 @@ final class AppUpdater {
             pendingInstallResume = true;
             return;
         }
+        if (state.equals("ready") || verifiedApkCode == target.code) maybeReadyPrompt(target);
         if (preferences.getBoolean("waiting_permission", false)) {
             preferences.edit().putBoolean("waiting_permission", false).apply();
             if (Build.VERSION.SDK_INT < 26 || activity.getPackageManager().canRequestPackageInstalls()) {
@@ -658,6 +734,7 @@ final class AppUpdater {
 
     void destroy() {
         destroyed = true; generation.incrementAndGet();
+        autoCheckHandler.removeCallbacksAndMessages(null);
         HttpURLConnection active = connection; if (active != null) active.disconnect();
         if (installResultReceiverRegistered) {
             try { activity.unregisterReceiver(installResultReceiver); } catch (Exception ignored) { }
