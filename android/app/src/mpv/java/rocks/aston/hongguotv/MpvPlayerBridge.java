@@ -57,6 +57,9 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         final MpvOutputState output = new MpvOutputState();
         MPVLib player;
         boolean outputReady, wantsPlay, terminal, pendingSeek;
+        // Set when this source already fell back from hardware to software
+        // decoding, preventing a fallback loop on genuinely dead sources.
+        boolean swFallback;
         long position, duration;
         long loadRequestedAt, fileLoadedAt, outputReadyAt;
         String decoder = "", state = "preparing";
@@ -92,13 +95,19 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public String diagnostics() { return diagnostic; }
     @JavascriptInterface public String decoderMode() {
         String stored = preferences.getString("mpv_decode_mode", null);
-        // One-time migration: devices that still carry the stored "自动解码"
-        // preference keep crashing on episode switches, because the vendor
-        // codec service aborts while the recreated MediaCodec releases. Move
-        // them to software decoding once; an explicit later choice is kept.
-        if ("mpv_auto".equals(stored) && !preferences.getBoolean("mpv_auto_migrated", false)) {
-            preferences.edit().putString("mpv_decode_mode", "mpv_software").putBoolean("mpv_auto_migrated", true).apply();
-            stored = "mpv_software";
+        // Reverse of the 0.2.139 migration: that release forced software
+        // decoding because one vendor's codec service corrupted its own heap
+        // during decoder recreation. The rebuilt mpv stack and real-world
+        // testing show hardware decoding is smooth and stable on current
+        // devices, so restore the automatic default once. A choice made after
+        // this point sticks because the migration flag is cleared here.
+        if (preferences.getBoolean("mpv_auto_migrated", false)) {
+            if ("mpv_software".equals(stored)) {
+                preferences.edit().remove("mpv_decode_mode").remove("mpv_auto_migrated").apply();
+                stored = null;
+            } else {
+                preferences.edit().putBoolean("mpv_auto_migrated", false).apply();
+            }
         }
         return MpvDecodeMode.stored(stored).id;
     }
@@ -394,6 +403,23 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     private void fail(Session target, String kind, int code) {
         if (!current(target)) return;
+        // Hardware decoding must never leave a dead screen: when the decoder
+        // fails to start or dies mid-play, retry the same source in software
+        // decoding once. Only a software failure is reported upward.
+        if (target.mode == MpvDecodeMode.AUTOMATIC && !target.swFallback
+                && (kind.equals("initialization") || kind.equals("native_event")
+                    || kind.equals("media") || kind.equals("output_timeout"))) {
+            JSONObject detail = new JSONObject();
+            try { detail.put("kind", "hwdec_fallback").put("code", code); } catch (Exception ignored) {}
+            event(target, "info", detail);
+            dispose(target);
+            Session retry = new Session(target.generation, target.id, target.source, target.data, MpvDecodeMode.SOFTWARE);
+            retry.swFallback = true;
+            retry.wantsPlay = target.wantsPlay || target.outputReady;
+            retry.position = target.position;
+            installSession(retry);
+            return;
+        }
         JSONObject detail = new JSONObject();
         target.errorKind = kind; target.errorCode = code;
         try { detail.put("kind", kind).put("code", code); } catch (Exception ignored) {}

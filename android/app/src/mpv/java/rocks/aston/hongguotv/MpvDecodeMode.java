@@ -2,14 +2,12 @@ package rocks.aston.hongguotv;
 
 /** A source snapshots this preference; changing it never reconfigures a live decoder. */
 enum MpvDecodeMode {
-    // Software decoding is the default: the vendor codec service aborts on
-    // decoder recreation (every episode switch corrupts the omx heap, Scudo
-    // abort in omx@1.0-service) and takes the whole app down through the
-    // MediaCodec release path. Software decoding never touches that service,
-    // keeps mpv's atomic loadfile replace available for seamless switches,
-    // and with bytevc1 tiers filtered server side it plays everything
-    // smoothly. Hardware decoding stays available as the explicit "自动解码"
-    // choice (mediacodec-copy, fenced stops).
+    // Automatic decoding (hardware via mediacodec-copy) is the default: on
+    // most TVs it is far smoother, and the rebuilt mpv stack no longer
+    // trips the vendor codec service on this generation of devices. When a
+    // decoder still fails to start or dies mid-play, the bridge falls back
+    // to software decoding for that source once before giving up, so the
+    // user sees a working picture instead of an error.
     AUTOMATIC("mpv_auto", "mediacodec-copy"), SOFTWARE("mpv_software", "no");
 
     final String id, hwdec;
@@ -21,6 +19,6 @@ enum MpvDecodeMode {
     }
     static MpvDecodeMode stored(String id) {
         MpvDecodeMode mode = requested(id);
-        return mode == null ? SOFTWARE : mode;
+        return mode == null ? AUTOMATIC : mode;
     }
 }
