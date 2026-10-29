@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 349,
+  "version_code": 350,
   "min_sdk": 23,
-  "version_name": "0.2.149",
+  "version_name": "0.2.150",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63018420,
-  "sha256": "381a49b4857ebc52f31328b2ccd3b3da22ebb86da7cba1c2d813bc367291232a",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.149/hongguo-tv-speed-mpv-0.2.149.apk",
+  "size": 63019682,
+  "sha256": "4350895b01e36cc7dd22bf50c65502c55a64bd4b9c03a1ab2995a6a4ddf3d59d",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.150/hongguo-tv-speed-mpv-0.2.150.apk",
   "release_notes": "极速版",
   "variant": "mpv"
 }
