@@ -5445,6 +5445,16 @@
   // Official-style transition: a cover card fades over the player while the
   // next episode or drama loads, hiding the decoder's black gap entirely.
   var episodeTransitionTimer = 0;
+  // When the switch target is already prepared (speculative range prefetch
+  // ready) and the held-frame transition covers the swap, every loading
+  // spinner on the path is suppressed: the previous episode's picture stays
+  // on screen until the new one is decoded, which reads as uninterrupted
+  // playback. The failure panel and the preparation watchdog still fire.
+  var quietTransitionGeneration = 0;
+  function prepareStatus(generation, episode) {
+    if (generation === quietTransitionGeneration) return;
+    setPlayerStatus(episodeLoadingText(episode));
+  }
   var skipOverlayTimer = 0, skipOverlayHideTimer = 0;
   function showSkipVerticalOverlay() {
     var overlay = document.getElementById('skip-vertical-overlay');
@@ -5573,6 +5583,7 @@
     var keepEpisodeCover = playbackEngineName() === 'mpv' || !sameSeries || nativeAtSwitch || !capturedLastFrame ||
       ((typeof webosShell === 'undefined' || !webosShell) && !nativeAtSwitch && capturedLastFrame);
     var generation = ++feedGeneration;
+    quietTransitionGeneration = preparedTransition && sameSeries && keepRangeFrame ? generation : 0;
     if (autoCinemaCandidate && autoCinemaGeneration && generation !== autoCinemaGeneration) cancelPendingAutoCinema();
     holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
@@ -5587,7 +5598,7 @@
     var incomingEpisode = forcedEpisode || (incomingResume ? incomingResume.episode : libraryLoaded ? resumeEpisode(libraryEntry(item.series_id), item) : 0);
     setFeatured(Object.assign({}, item, { start_episode: incomingEpisode }), !incomingEpisode);
     updateSeriesRows();
-    setPlayerStatus(episodeLoadingText(incomingEpisode));
+    prepareStatus(generation, incomingEpisode);
     if (keepRangeFrame) {
       rangeTransitionTimer = setTimeout(function () {
         if (generation === feedGeneration && hero.classList.contains('is-preparing-video') && hero.classList.contains('is-range-transition')) {
@@ -5620,7 +5631,7 @@
       var position = forcedPosition !== undefined ? forcedPosition : resumed ? resumed.position : entry && episode === entry.episode && !entry.completed ? entry.position || 0 : 0;
       playbackRequest.episode = episode; playbackRequest.position = position;
       setFeatured(Object.assign({}, item, { start_episode: episode }));
-      setPlayerStatus(episodeLoadingText(episode));
+      prepareStatus(generation, episode);
       var source = episode === 1 && firstVid(item) ? Promise.resolve(item) : getDetail(item, request.signal);
       return source.then(function (detail) {
         if (generation !== feedGeneration || request.signal.aborted) return null;
@@ -5793,7 +5804,7 @@
           if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
           placeholder.classList.add('is-hidden');
           video.load();
-          setPlayerStatus(episodeLoadingText(activePlayback.episode));
+          prepareStatus(generation, activePlayback.episode);
           if (!applicationHidden() && !applicationInBackground) {
             playMedia(video).catch(function () { setPlayerStatus(''); revealControls(); showNotice(uiText('content.videoReadyConfirm', '视频已准备好，请按确认键开始播放')); });
             armPreparationWatchdog(activePlayback);
@@ -8750,7 +8761,8 @@
     activePlayback.stableSince = 0;
     interruptPlaybackPresentation(activePlayback);
     if (activePlayback.presentation) activePlayback.presentation.waiting = true;
-    setPlayerStatus(document.getElementById('hero').classList.contains('is-preparing-video') || !activePlayback.started ? episodeLoadingText(activePlayback.episode) : uiText('ui.buffering', '正在缓冲…'));
+    if (!(feedGeneration === quietTransitionGeneration && !activePlayback.started))
+      setPlayerStatus(document.getElementById('hero').classList.contains('is-preparing-video') || !activePlayback.started ? episodeLoadingText(activePlayback.episode) : uiText('ui.buffering', '正在缓冲…'));
     if (activePlayback.mode === 'range' && !activePlayback.rangeFallbackAttempted) scheduleRangeStallFallback(activePlayback);
   });
   media.addEventListener('stalled', function () { if (activePlayback && activePlayback.mode === 'range') scheduleRangeStallFallback(activePlayback); });
@@ -8768,12 +8780,12 @@
     if (recoverPlaybackAfterError(activePlayback)) return;
     setPlayerStatus(uiText('ui.playbackFailed', '这集未能正常播放'), true);
   });
-  // Gapless queueing: once the next episode's file is fully downloaded to the
-  // core's disk cache, hand it to the native player as a playlist append so
-  // end-of-file flows straight into the next episode with uninterrupted
-  // audio. Works for both native engines (mpv append-play, Media3 playlist);
-  // HTML5 keeps the card fallback. One entry per episode key; any manual
-  // switch replaces the whole session and resets this on its own.
+  // Gapless queueing: stage the prepared next episode with the native player
+  // so end-of-file flows into it in-session — the last frame stays on screen
+  // while the staged source loads. Works for both native engines (mpv
+  // in-session replace, Media3 playlist advance); HTML5 keeps the card
+  // fallback. One entry per episode key; any manual switch replaces the whole
+  // session and resets this on its own.
   var gaplessQueuedKey = '';
   var gaplessPendingKey = '';
   function queueGaplessEpisode(peeked, path) {
@@ -8799,17 +8811,34 @@
     if (!playback || playback.generation !== feedGeneration || !playback.started || applicationInBackground || applicationHidden()) return;
     var peeked = episodePrefetch.peek();
     if (!peeked || peeked.key === gaplessQueuedKey || peeked.key === gaplessPendingKey) return;
-    var full = peeked.data && peeked.data.fullReady && typeof peeked.data.fullReady.then === 'function' ? peeked.data.fullReady : null;
+    if (Number(peeked.target.episode) !== Number(playback.episode) + 1 ||
+        String(peeked.target.series_id) !== String(playback.item.series_id)) return;
+    var bridge = window.HongguoNativePlayer;
+    if (!bridge || typeof bridge.queueNext !== 'function') return;
+    if (!peeked.data || !peeked.data.path) return;
+    // The player stages the source and swaps it in-session at end-of-file
+    // while holding the last frame, so either source qualifies: the fully
+    // downloaded file reads from pure disk, and the warmed range stream is
+    // staged when the full download has not settled within a second. Both
+    // keep every episode boundary on the seamless path instead of falling
+    // back to the card whenever the whole-episode download lost the race.
+    gaplessPendingKey = peeked.key;
+    var rangePath = peeked.data.path;
+    var full = peeked.data.fullReady && typeof peeked.data.fullReady.then === 'function' ? peeked.data.fullReady : null;
+    var staged = false;
+    var stage = function (path) {
+      if (staged || gaplessPendingKey !== peeked.key) return;
+      staged = true;
+      gaplessPendingKey = '';
+      if (path) queueGaplessEpisode(peeked, path);
+    };
     if (full) {
-      // Only the fully downloaded file joins the queue: a streaming URL
-      // re-entering the player at end-of-file cannot promise gapless audio.
-      gaplessPendingKey = peeked.key;
-      full.then(function (data) {
-        if (gaplessPendingKey !== peeked.key) return;
-        gaplessPendingKey = '';
-        if (data && data.path && data.mode === 'full') queueGaplessEpisode(peeked, data.path);
-      }, function () { if (gaplessPendingKey === peeked.key) gaplessPendingKey = ''; });
-    }
+      Promise.race([full, new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 1500); })])
+        .then(function (data) {
+          if (gaplessPendingKey !== peeked.key) return;
+          stage(data && data.path && data.mode === 'full' ? data.path : rangePath);
+        }, function () { if (gaplessPendingKey === peeked.key) stage(rangePath); });
+    } else stage(rangePath);
   }
 
   media.addEventListener('autonext', function (event) {

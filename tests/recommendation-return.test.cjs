@@ -74,6 +74,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     function hasLastPlaybackFrame(){return false}function captureLastPlaybackFrame(){}function clearLastPlaybackFrame(){}
     function waitForPlaybackPaint(){return Promise.resolve(true)}function bindPlaybackPresentation(){}function clearRangeTransitionHint(){}function waitForPlaybackPrefetch(handoff){return handoff ? handoff.promise : Promise.resolve(null)}
     function setPlayerStatus(){}function showRecommendationPlaceholder(){}function episodeLoadingText(){return 'loading'}function revealControls(){}function showNotice(x){calls.push({kind:'notice',text:x})}
+    var quietTransitionGeneration = 0;function prepareStatus(){}
     function playMedia(v){v.paused=false;calls.push({kind:'play',src:v.src});return Promise.resolve()}
     function stageNativePlaybackStartPosition(){}
     function accountKeypadOpen(){return false}function hideWorkspacePages(){}function goFocus(x){document.activeElement=x}function firstContentFocus(){return pageMode()==='recommend'?activeChannel():document.getElementById('hero-feed-focus')}
