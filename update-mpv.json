@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 359,
+  "version_code": 362,
   "min_sdk": 23,
-  "version_name": "0.2.159",
+  "version_name": "0.2.162",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63038279,
-  "sha256": "143f11f6bc2a6f74f7c7fada30260d5dbaaeaf7df85d489c682e8ec482aa93ec",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.159/hongguo-tv-speed-mpv-0.2.159.apk",
-  "release_notes": "- release: v0.2.159 - auto-refresh failed playback preparation on every TV shell",
+  "size": 63040300,
+  "sha256": "00b6318bee1b6188124ea44edc42de5ab96fe389648ac8f9a5047facd85e1e9d",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.162/hongguo-tv-speed-mpv-0.2.162.apk",
+  "release_notes": "- release: v0.2.162 - silent skip for empty-source dramas",
   "variant": "mpv"
 }
