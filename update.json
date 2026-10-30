@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 363,
+  "version_code": 364,
   "min_sdk": 23,
-  "version_name": "0.2.163",
+  "version_name": "0.2.164",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19220500,
-  "sha256": "f7822f4af5a83b636d0300205035f148a424812197d65852000591a76595228c",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.163/hongguo-tv-speed-0.2.163.apk",
-  "release_notes": "- release: v0.2.163 - gapless episode queue (plan one)",
+  "size": 19303508,
+  "sha256": "07ca5501827e485e06f5dbd55c0c31046508c7d3bd2cb5ad5d321fd304bac466",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.164/hongguo-tv-speed-0.2.164.apk",
+  "release_notes": "- 无缝换集真正落地：修复换集队列从未生效的两个缺陷，mpv 在播当前集时预载下一集，集与集直接接力（实测切换零卡片、约 0.3 秒完成），不再有 1 秒停顿\n- 起播不再\"转圈到天荒地老\"：横屏探测改用 64KB 头部请求不再整集下载、失败自动刷新在安卓上真正生效、新增 45 秒兜底，卡住必自动恢复或给出可重试提示\n- 推荐流升级为 AI 剧优先的真随机流：不再跟随官方个性化排序，从 AI 剧库本地洗牌，自动排除看过的剧；竖屏剧自动跳过并给出半透明大字提示\n- 看完整部剧后自动接下一部剧覆盖所有入口（历史/搜索/排行/详情页），看后的推荐面板恢复并带倒计时自动播放\n- 应用更新就绪后必弹提示：下载完成时正在播放或息屏也不再丢弹窗，回到首页即补弹\"一键安装\"\n- 换集过渡卡片不再黑卡：封面取值与全站统一并自带加载失败兜底\n- 控制条出现时焦点必定落在控制条上，自动隐藏后的\"死焦点\"自愈\n- 新增自动维护的横屏参数库：每日自动测量新剧并随版本内置，已知横屏剧秒开、竖屏剧秒跳",
   "variant": "standard"
 }
