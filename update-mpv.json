@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 362,
+  "version_code": 363,
   "min_sdk": 23,
-  "version_name": "0.2.162",
+  "version_name": "0.2.163",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63040300,
-  "sha256": "00b6318bee1b6188124ea44edc42de5ab96fe389648ac8f9a5047facd85e1e9d",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.162/hongguo-tv-speed-mpv-0.2.162.apk",
-  "release_notes": "- release: v0.2.162 - silent skip for empty-source dramas",
+  "size": 63043272,
+  "sha256": "adea1e82a7fb099caccc844360daaf387fb17503b99537543faddc716b1ce178",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.163/hongguo-tv-speed-mpv-0.2.163.apk",
+  "release_notes": "- release: v0.2.163 - gapless episode queue (plan one)",
   "variant": "mpv"
 }
