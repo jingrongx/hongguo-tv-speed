@@ -75,6 +75,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         // lands in software, software that cannot keep up lands in hardware.
         long dropSampleAt, dropBase;
         int stallStrikes;
+        // Gapless queue: the next episode of the same drama appended via
+        // loadfile append-play. mpv advances on its own at end-of-file; the
+        // bridge reports an auto_next event and keeps the session alive.
+        String queuedId;
+        JSONObject queuedData;
+        boolean firstFileLoaded;
         long position, duration;
         long loadRequestedAt, fileLoadedAt, outputReadyAt;
         String decoder = "", state = "preparing";
@@ -127,6 +133,33 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         }
         return MpvDecodeMode.stored(stored).id;
     }
+    /**
+     * Append the next episode of the same drama to mpv's playlist. mpv plays
+     * it itself at end-of-file with gapless audio; the bridge reports
+     * auto_next so the UI can advance its bookkeeping without reloading.
+     * Returns false when the session cannot take a queue entry (too late,
+     * already queued, not ready) — the caller keeps its fallback path.
+     */
+    @JavascriptInterface public boolean queueNext(String source, String id, String dataJson) {
+        Session target = session;
+        if (destroyed || target == null || !current(target) || target.player == null) return false;
+        if (target.terminal || target.queuedId != null || !target.outputReady) return false;
+        if (source == null || source.isEmpty()) return false;
+        try {
+            JSONObject data = dataJson == null ? new JSONObject() : new JSONObject(dataJson);
+            target.player.command(new String[]{"loadfile", source, "append-play"});
+            target.queuedId = id;
+            target.queuedData = data;
+            JSONObject detail = new JSONObject();
+            try { detail.put("kind", "queue_next").put("episode", data.optInt("episode", 0)); } catch (Exception ignored) {}
+            event(target, "info", detail);
+            return true;
+        } catch (Exception ignored) {
+            target.queuedId = null; target.queuedData = null;
+            return false;
+        }
+    }
+
     @JavascriptInterface public boolean safeStart() { return false; }
     @JavascriptInterface public void setDecoderMode(String value) {
         MpvDecodeMode mode = MpvDecodeMode.requested(value);
@@ -324,7 +357,17 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                         // stay visible in diagnostics and follow the existing
                         // timeout path instead of changing playback timing.
                         if (!target.output.loaded) return;
-                        if (reason == 0 && target.outputReady) finish(target);
+                        if (reason == 0 && target.outputReady) {
+                            if (target.queuedId != null) {
+                                // mpv already moved to the queued episode on
+                                // its own: report the last progress (history
+                                // writes use it) and keep the session alive —
+                                // the auto_next event follows on file-loaded.
+                                reportProgress(target);
+                                return;
+                            }
+                            finish(target);
+                        }
                         else if ((reason == 4 || error < 0) && target.outputReady) fail(target, "media", error);
                     });
                 }
@@ -350,8 +393,26 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 @Override public void event(int value) {
                     post(target -> {
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
+                            boolean queuedAdvance = target.firstFileLoaded && target.queuedId != null;
                             target.output.loaded = true;
                             target.fileLoadedAt = SystemClock.uptimeMillis();
+                            if (queuedAdvance) {
+                                target.firstFileLoaded = true;
+                                String advancedId = target.queuedId;
+                                JSONObject advancedData = target.queuedData;
+                                target.queuedId = null; target.queuedData = null;
+                                // Re-arm the per-file state machine: readiness,
+                                // green probe and stall watch all restart for
+                                // the new file on this same session.
+                                target.output.loaded = true;
+                                target.outputReady = false;
+                                target.output.restarted = false;
+                                target.greenProbes = 0; target.greenStreak = 0;
+                                target.dropSampleAt = 0; target.stallStrikes = 0;
+                                target.pendingSeek = false;
+                                MpvPlayerBridge.this.event(target, "auto_next", advancedData == null ? new JSONObject() : advancedData);
+                            }
+                            target.firstFileLoaded = true;
                             // A codec this device could only present in software
                             // skips the broken hardware attempt before any green
                             // frame can reach the screen.

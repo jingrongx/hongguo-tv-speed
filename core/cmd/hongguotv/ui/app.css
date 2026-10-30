@@ -346,8 +346,8 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 .episode-transition-cover.is-hidden { display: none; }
 .episode-transition-copy { position: relative; display: flex; flex-direction: column; gap: 6px; max-width: 78%; transform: translateX(30px); opacity: 0; transition: transform .36s ease-out .04s, opacity .3s ease-out .04s; }
 .episode-transition.is-visible .episode-transition-copy { transform: none; opacity: 1; }
-.episode-transition-copy strong { color: #f2f2f7; font-size: 24px; font-weight: 600; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
-.episode-transition-copy span { color: #b9b9c6; font-size: 17px; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.episode-transition-copy strong { color: #ffffff; font-size: 44px; font-weight: 700; text-shadow: 0 3px 14px rgba(0,0,0,.7); }
+.episode-transition-copy span { color: #f0f0f6; font-size: 30px; font-weight: 600; text-shadow: 0 2px 10px rgba(0,0,0,.7); }
 .playback-menu-hint-card { display: flex; width: 100%; max-width: 760px; max-height: 92vh; flex-direction: column; align-items: center; overflow: auto; padding: 12px 14px 16px; box-sizing: border-box; color: #fff; background: rgba(20,21,26,.84); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; box-shadow: 0 12px 38px rgba(0,0,0,.42); }
 .playback-menu-hint-graphic { position: relative; flex: 0 0 auto; width: 100%; max-width: 680px; line-height: 0; }
 .playback-menu-hint-graphic img { display: block; width: 100%; height: auto; }

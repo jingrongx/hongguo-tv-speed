@@ -8455,6 +8455,7 @@
     if (!activePlayback || !activePlayback.started) return;
     updatePlaybackControls();
     maybePrefetchNextEpisode(media);
+    armGaplessQueue();
     saveProgress(false);
   });
   media.addEventListener('pause', function () {
@@ -8522,6 +8523,59 @@
     if (recoverPlaybackAfterError(activePlayback)) return;
     setPlayerStatus(uiText('ui.playbackFailed', '这集未能正常播放'), true);
   });
+  // Gapless queueing: once the next episode's full file is on disk, hand it
+  // to mpv as a playlist append so end-of-file flows straight into the next
+  // episode with uninterrupted audio. One entry per episode key; any manual
+  // switch replaces the whole mpv session and resets this on its own.
+  var gaplessQueuedKey = '';
+  function armGaplessQueue() {
+    if (!nativePlaybackActive() || playbackEngineName() !== 'mpv') return;
+    var playback = activePlayback;
+    if (!playback || playback.generation !== feedGeneration || !playback.started || applicationInBackground || applicationHidden()) return;
+    var peeked = episodePrefetch.peek();
+    if (!peeked || peeked.key === gaplessQueuedKey) return;
+    // Only a fully downloaded local file joins the queue: a streaming URL
+    // re-entering mpv at end-of-file cannot promise gapless audio.
+    if (!/^\/|^[A-Za-z]:[\\/]/.test(String(peeked.data.path))) return;
+    if (Number(peeked.target.episode) !== Number(playback.episode) + 1 ||
+        String(peeked.target.series_id) !== String(playback.item.series_id)) return;
+    var bridge = window.HongguoNativePlayer;
+    if (!bridge || typeof bridge.queueNext !== 'function') return;
+    var detail = JSON.stringify({ episode: peeked.target.episode, vid: peeked.target.vid, series_id: peeked.target.series_id, quality: peeked.target.quality || '', owner: peeked.target.owner || '' });
+    if (bridge.queueNext(peeked.data.path, peeked.target.vid, detail)) gaplessQueuedKey = peeked.key;
+  }
+
+  media.addEventListener('autonext', function (event) {
+    // mpv advanced to the queued next episode by itself (gapless audio):
+    // picture and sound never stop, the session keeps running, so only the
+    // bookkeeping moves on. The outgoing episode's progress was reported at
+    // end-of-file; the incoming one starts at zero.
+    var playback = activePlayback;
+    var detail = event && event.detail || {};
+    var nextEpisode = Number(detail.episode) || 0;
+    var nextVid = String(detail.vid || '');
+    if (!playback || playback.generation !== feedGeneration || !nextEpisode || !nextVid) return;
+    if (Number(playback.episode) + 1 !== nextEpisode || nextVid === String(playback.vid)) return;
+    playback.episode = nextEpisode;
+    playback.vid = nextVid;
+    playback.position = 0;
+    playback.started = false; playback.stableSince = 0; playback.lastWrite = 0; playback.completed = false;
+    playback.landscapeChecked = true;   // same drama, orientation already known
+    playback.endedPending = false;
+    playback.timing.episode = nextEpisode;
+    playback.timing.started_at = Date.now();
+    playback.timing.ready_at = Date.now();
+    playback.timing.automatic_next = true;
+    playback.item.start_episode = nextEpisode;
+    setFeatured(playback.item);
+    updateDetailProgress();
+    resetDanmaku();
+    clearRangeStallTimer();
+    saveProgress(true);
+    setPlayerStatus('');
+    gaplessQueuedKey = '';
+  });
+
   media.addEventListener('ended', function () {
     clearRangeStallTimer();
     var playback = activePlayback;

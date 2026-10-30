@@ -479,6 +479,13 @@
       }
       if (name === 'playing') { state.started = true; state.paused = false; state.ended = false; state.seeking = false; state.readyState = Math.max(3, state.readyState); notifyPlaybackActive(true); dispatch('playing', detail); return; }
       if (name === 'paused') { state.paused = true; notifyPlaybackActive(false); dispatch('pause', detail); return; }
+      if (name === 'auto_next') {
+        // mpv advanced to the queued next episode on its own (gapless). The
+        // session id is unchanged, so progress/event matching keeps working;
+        // app.js uses this event to advance its episode bookkeeping.
+        dispatch('autonext', { type: 'autonext', detail: detail });
+        return;
+      }
       if (name === 'ended') { state.ended = true; state.paused = true; state.seeking = false; notifyPlaybackActive(false); dispatch('ended', detail); return; }
       if (name === 'error') {
         notifyPlaybackActive(false);

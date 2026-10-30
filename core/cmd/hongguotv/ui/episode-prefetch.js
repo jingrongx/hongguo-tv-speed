@@ -46,7 +46,7 @@
         return;
       }
       cancel();
-      var candidate = { key: identity, info: info, target: null, attempts: 0, timing: { started_at: now(), ready_at: 0 },
+      var candidate = { key: identity, info: info, target: null, data: null, attempts: 0, timing: { started_at: now(), ready_at: 0 },
         request: typeof AbortController === 'function' ? new AbortController() : null };
       entry = candidate;
       run(candidate);
@@ -70,6 +70,7 @@
       }).then(function (data) {
         if (!current(candidate)) return null;
         candidate.state = data && data.path ? 'ready' : 'unavailable';
+        candidate.data = data && data.path ? data : null;
         if (candidate.state === 'ready') candidate.timing.ready_at = now();
         return data;
       }).catch(function (error) {
@@ -85,6 +86,11 @@
         }
         return null;
       });
+    }
+    // One-shot view of a fully prepared next episode, for gapless queueing.
+    function peek() {
+      return entry && entry.state === 'ready' && entry.target && entry.data
+        ? { key: entry.key, target: entry.target, data: entry.data } : null;
     }
     function keepFor(seriesID, episode, quality, owner, mode) {
       if (entry && (entry.info.series_id !== seriesID || entry.info.episode + 1 !== episode ||
