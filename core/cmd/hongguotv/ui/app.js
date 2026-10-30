@@ -2762,7 +2762,9 @@
       // action must win on the failure panel (dock, feed or dead focus all
       // hand over — only an open sidebar keeps its own focus).
       if (['feed', 'controls', 'timeline', ''].indexOf(zoneOf(document.activeElement)) >= 0) goFocus(document.getElementById('player-retry'));
+      if (typeof scheduleFailureAutoRetry === 'function') scheduleFailureAutoRetry();
     }
+    else if (typeof cancelFailureAutoRetry === 'function') cancelFailureAutoRetry();
   }
   function episodeLoadingText(episode) { return episode > 0 ? uiText('content.episodeNumber', '第{episode}集', { episode: episode }) : '…'; }
   function setControlIcon(action, label, icon) {
@@ -3319,6 +3321,7 @@
     return true;
   }
   function pauseForBackground() {
+    if (typeof cancelFailureAutoRetry === 'function') cancelFailureAutoRetry();
     if (typeof closePlaybackCommandMenu === 'function') closePlaybackCommandMenu(false);
     if (typeof closePlaybackMenuHint === 'function') closePlaybackMenuHint();
     if (searchScanOpen) closeSearchScan(true);
@@ -3372,6 +3375,7 @@
     document.getElementById('hero').classList.remove('is-range-transition');
     closeDiscussion(false); resetDanmaku();
     closePlayerOptions(false); clearTimeout(controlsTimer);
+    document.getElementById('hero').classList.remove('is-portrait-video');
     shell.classList.remove('is-controls-hidden'); exitCinema();
     claimControlBarFocus();
     setPlayerStatus('');
@@ -4182,15 +4186,15 @@
     setPlayerStatus('');
   }
 
-  // Hop to the next landscape drama in the given direction, skipping known
-  // verticals; refuse politely when the feed ends that way.
-  function skipVerticalFrom(dir, chain) {
-    var target = feedIndex + dir;
+  // Jump straight to the nearest landscape drama in the given direction:
+  // known verticals skip instantly, unknown ones are measured one by one
+  // with cheap header probes, and only the first landscape drama actually
+  // starts playing — one card, no per-drama flashing. The walk is bound to
+  // the caller's feed generation so a newer switch cancels it.
+  function jumpToLandscape(startTarget, dir, chain, epoch) {
+    var target = startTarget;
     var hops = 0;
-    while (hops < 12 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) {
-      target += dir; hops++;
-    }
-    if (target < 0 || target >= feedItems.length) {
+    function exhausted() {
       showNotice(uiText(dir < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
         dir < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
       // The caller returns without touching the player: never leave the
@@ -4199,13 +4203,54 @@
       document.getElementById('hero').classList.remove('is-preparing-video');
       setPlayerStatus('');
       revealControls();
-      return false;
     }
-    showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
-    showSkipVerticalOverlay();
-    autoEnterChain = chain + 1;
-    autoEnterChainDirection = dir;
-    playFeedItem(target);
+    function finish() {
+      if (feedGeneration !== epoch) return;
+      if (hops > 0) {
+        showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
+        showSkipVerticalOverlay();
+      }
+      autoEnterChain = chain + 1;
+      autoEnterChainDirection = dir;
+      playFeedItem(target);
+    }
+    function attempt() {
+      if (feedGeneration !== epoch) return;
+      // Recorded verdicts (either source) are free: known verticals skip
+      // instantly, a recorded landscape plays immediately.
+      while (hops < 12 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) { target += dir; hops++; }
+      if (target < 0 || target >= feedItems.length || hops >= 12) { exhausted(); return; }
+      if (orientationDatabaseVerdict(feedItems[target].series_id) === 'landscape') { finish(); return; }
+      // Unknown candidates are measured in parallel (up to three at once) —
+      // a run of verticals costs one round trip, not one per drama.
+      var batch = [];
+      var cursor = target;
+      while (batch.length < 3 && cursor >= 0 && cursor < feedItems.length && hops + batch.length < 12) {
+        var candidate = feedItems[cursor];
+        if (orientationDatabaseVerdict(candidate.series_id) === 'landscape') break;
+        if (orientationDatabaseVerdict(candidate.series_id) === '') batch.push({ target: cursor, item: candidate });
+        cursor += dir;
+      }
+      if (!batch.length) { finish(); return; }
+      Promise.all(batch.map(function (c) {
+        return Promise.race([
+          probeOrientation(c.item),
+          new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 4500); })
+        ]).then(function (verdict) { return { target: c.target, verdict: verdict }; });
+      })).then(function (results) {
+        if (feedGeneration !== epoch) return;
+        for (var i = 0; i < results.length; i++) {
+          hops++;
+          if (results[i].verdict === true || results[i].verdict === 'unplayable') continue;
+          target = results[i].target;
+          finish();
+          return;
+        }
+        target = results[results.length - 1].target + dir;
+        attempt();
+      });
+    }
+    attempt();
     return true;
   }
 
@@ -4263,37 +4308,6 @@
       });
     });
     return orientationProbes[seriesId];
-  }
-  // Walk the feed in the given direction, measuring unknown dramas on the
-  // fly, until a landscape one is found. Nothing paints until then.
-  function probeAndPlay(startTarget, step, chain) {
-    var target = startTarget;
-    var hops = 0;
-    function attempt() {
-      if (target < 0 || target >= feedItems.length || hops >= 12) {
-        showNotice(uiText(step < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
-          step < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
-        return;
-      }
-      var item = feedItems[target];
-      if (isKnownVertical(item.series_id)) { target += step; hops++; attempt(); return; }
-      probeOrientation(item).then(function (vertical) {
-        if (vertical === true || vertical === 'unplayable') { target += step; hops++; attempt(); return; }
-        finish();
-      });
-    }
-    function finish() {
-      if (target < 0 || target >= feedItems.length) {
-        showNotice(uiText(step < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
-          step < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
-        return;
-      }
-      if (hops > 0) showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
-      autoEnterChain = chain + 1;
-      autoEnterChainDirection = step;
-      playFeedItem(target);
-    }
-    attempt();
   }
   function switchRecommendation(step) {
     if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
@@ -5190,6 +5204,30 @@
       setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'), true);
     }, 45000);
   }
+  // A shown failure panel never just sits there: up to three automatic
+  // retries with growing pauses run the same path as the manual button.
+  // The counter resets as soon as an episode actually starts.
+  var failureAutoRetryTimer = 0;
+  var failureAutoRetryCount = 0;
+  function cancelFailureAutoRetry() {
+    if (failureAutoRetryTimer) { clearTimeout(failureAutoRetryTimer); failureAutoRetryTimer = 0; }
+  }
+  // Growing pauses: an upstream throttle answers bursts with more throttle,
+  // so the retries space themselves out and keep the circuit open for about
+  // five minutes before handing back to the manual button.
+  var failureAutoRetryDelays = [10000, 25000, 50000, 90000, 90000, 90000];
+  function scheduleFailureAutoRetry() {
+    cancelFailureAutoRetry();
+    if (applicationInBackground || applicationHidden() || !isPlaybackPage()) return;
+    if (failureAutoRetryCount >= failureAutoRetryDelays.length || !playbackRequest) return;
+    failureAutoRetryTimer = setTimeout(function () {
+      failureAutoRetryTimer = 0;
+      if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
+      failureAutoRetryCount++;
+      showNotice(uiText('ui.failureAutoRetry', '正在自动重试播放…'));
+      playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position);
+    }, failureAutoRetryDelays[Math.min(failureAutoRetryCount, failureAutoRetryDelays.length - 1)]);
+  }
   function finishPlaybackPreparation(playback) {
     var hero = document.getElementById('hero');
     var video = document.getElementById('hero-video');
@@ -5260,6 +5298,8 @@
     var presentation = playback && playback.presentation;
     clearPreparationWatchdog(playback);
     emptySourceStreak = 0;
+    failureAutoRetryCount = 0;
+    if (typeof cancelFailureAutoRetry === 'function') cancelFailureAutoRetry();
     if (applicationInBackground || applicationHidden()) { video.pause(); return; }
     if (!presentation || presentation.failed) return;
     if (!currentPlaybackPresentation(playback, presentation, video) || video.paused || video.ended || video.seeking || video.readyState < 2) return;
@@ -5410,10 +5450,23 @@
   }
   function rememberVerticalDrama(seriesId, vertical) {
     if (!seriesId) return;
+    var verdict = vertical ? 'v' : 'h';
     try {
       var list = knownVerticalDramas().filter(function (id) { return id !== String(seriesId); });
       if (vertical) { list.push(String(seriesId)); if (list.length > 300) list = list.slice(-300); }
       window.localStorage.setItem('hongguo.verticalSeries', JSON.stringify(list));
+      // Full local verdict table: once measured, a drama is known vertical
+      // AND landscape across sessions — no re-probing either way.
+      var map = JSON.parse(window.localStorage.getItem('hongguo.orientation.local') || '{}');
+      map[String(seriesId)] = verdict;
+      var ids = Object.keys(map);
+      if (ids.length > 3000) {
+        var trimmed = {};
+        ids.slice(-3000).forEach(function (id) { trimmed[id] = map[id]; });
+        map = trimmed;
+      }
+      window.localStorage.setItem('hongguo.orientation.local', JSON.stringify(map));
+      orientationDatabase[String(seriesId)] = { o: verdict };
     } catch (error) { /* Private-mode storage: the memory is best effort. */ }
   }
   // Chain depth of automatic drama selection. 0 means the user picked this
@@ -5474,7 +5527,19 @@
   // neighbors: allow a few consecutive silent skips, then surface the honest
   // failure panel (its retry recovers as soon as the throttle lifts).
   var emptySourceStreak = 0;
-  function showEpisodeTransition(item, episode) {
+  // The episode transition is a designed moment, not a loading fallback: the
+  // card always slides in from the right over the held last frame, carries
+  // the drama poster and the target episode badge, and slides out to the
+  // left the moment the next episode's picture is ready. A hide may still be
+  // mid-animation when the next switch starts, so show/hide coordinate
+  // through one pending-hide handle.
+  var episodeTransitionHideTimer = 0;
+  // The fade needs room to breathe: the card stays fully visible for at
+  // least this long before the dissolve starts, no matter how fast the
+  // switch underneath was.
+  var episodeTransitionShownAt = 0;
+  var episodeTransitionMinDwellMs = 1500;
+  function showEpisodeTransition(item, episode, direction) {
     var card = document.getElementById('episode-transition');
     if (!card || !card.querySelector || !item) return;
     var img = card.querySelector('.episode-transition-cover');
@@ -5495,39 +5560,70 @@
       }
       else { img.onerror = null; img.removeAttribute('src'); img.classList.add('is-hidden'); }
     }
+    var drama = card.querySelector('.episode-transition-drama');
+    if (drama) drama.textContent = item.title || '';
     var title = card.querySelector('.episode-transition-title');
-    var sub = card.querySelector('.episode-transition-sub');
     if (title) title.textContent = item.title || '';
-    if (sub) sub.textContent = uiText('ui.episodeBadge', '第 {episode} 集', { episode: episode || 1 });
-    card.classList.remove('is-hidden');
-    if (window.requestAnimationFrame) window.requestAnimationFrame(function () { card.classList.add('is-visible'); });
-    else card.classList.add('is-visible');
+    var badge = card.querySelector('.episode-transition-badge');
+    if (badge) badge.textContent = uiText('ui.episodeBadge', '第 {episode} 集', { episode: episode || 1 });
+    if (episodeTransitionHideTimer) { clearTimeout(episodeTransitionHideTimer); episodeTransitionHideTimer = 0; }
+    card.classList.remove('is-hidden', 'is-leaving', 'is-visible', 'from-left', 'from-right');
+    // Travel direction: the next episode enters from the right and flows
+    // left; going back enters from the left. The card keeps traveling in
+    // the same direction as it fades out.
+    card.classList.add(direction === -1 ? 'from-left' : 'from-right');
+    episodeTransitionShownAt = Date.now();
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () { card.classList.add('is-visible'); });
+      });
+    } else card.classList.add('is-visible');
     if (episodeTransitionTimer) clearTimeout(episodeTransitionTimer);
     episodeTransitionTimer = setTimeout(hideEpisodeTransition, 4500);
   }
   function hideEpisodeTransition() {
     if (episodeTransitionTimer) { clearTimeout(episodeTransitionTimer); episodeTransitionTimer = 0; }
     var card = document.getElementById('episode-transition');
-    if (!card || !card.classList || card.classList.contains('is-hidden')) return;
+    if (!card || !card.classList || card.classList.contains('is-hidden') || card.classList.contains('is-leaving')) return;
+    if (episodeTransitionHideTimer) return;
+    var wait = episodeTransitionMinDwellMs - (Date.now() - episodeTransitionShownAt);
+    if (wait > 0) {
+      episodeTransitionHideTimer = setTimeout(function () {
+        episodeTransitionHideTimer = 0;
+        hideEpisodeTransition();
+      }, wait);
+      return;
+    }
     card.classList.remove('is-visible');
-    setTimeout(function () { card.classList.add('is-hidden'); }, 320);
+    card.classList.add('is-leaving');
+    episodeTransitionHideTimer = setTimeout(function () {
+      episodeTransitionHideTimer = 0;
+      card.classList.add('is-hidden');
+      card.classList.remove('is-leaving');
+    }, 520);
   }
 
   function playFeedItem(index, forcedEpisode, forcedPosition, continuation, resumeCheckpoint, recovery) {
     var autoChain = autoEnterChain;
     autoEnterChain = 0;
     closePlayerOptions(false);
-    // A fully prepared next episode (speculative prefetch already resolved
-    // and downloaded it) makes the transition card pure overhead: the frame
-    // transition below covers the swap, so skip the card for same-series
-    // episode steps that already have their source waiting.
-    var preparedTransition = false;
-    if (!recovery && feedItems[index]) {
-      var peekedTransition = episodePrefetch.peek();
-      preparedTransition = !!(peekedTransition && String(peekedTransition.target.series_id) === String(feedItems[index].series_id) &&
-        Number(peekedTransition.target.episode) === Number(forcedEpisode || 0));
+    // The slide-in poster card is the designed face of every episode and
+    // drama switch: it covers the held last frame immediately and leaves
+    // once the new picture is decoded. The seamless replace machinery runs
+    // underneath it either way.
+    if (feedItems[index] && !recovery) {
+      // Which way the story travels: an episode step backwards or a drama
+      // higher in the feed enters from the left, everything else from the
+      // right.
+      var transitionDirection = 1;
+      var outgoing = activePlayback && activePlayback.owner === accountEpoch ? activePlayback : null;
+      if (outgoing) {
+        if (String(outgoing.item.series_id) === String(feedItems[index].series_id)) {
+          if (Number(forcedEpisode) && Number(forcedEpisode) < Number(outgoing.episode)) transitionDirection = -1;
+        } else if (feedIndex >= 0 && index < feedIndex) transitionDirection = -1;
+      }
+      showEpisodeTransition(feedItems[index], forcedEpisode || (feedItems[index].start_episode || 1), transitionDirection);
     }
-    if (feedItems[index] && !recovery && !preparedTransition) showEpisodeTransition(feedItems[index], forcedEpisode || (feedItems[index].start_episode || 1));
     closeDiscussion(false); resetDanmaku();
     if (!feedItems.length) return;
     if (index < 0) { showNotice(uiText('ui.firstRecommendation', '已经是第一条推荐')); return; }
@@ -5583,12 +5679,13 @@
     var keepEpisodeCover = playbackEngineName() === 'mpv' || !sameSeries || nativeAtSwitch || !capturedLastFrame ||
       ((typeof webosShell === 'undefined' || !webosShell) && !nativeAtSwitch && capturedLastFrame);
     var generation = ++feedGeneration;
-    quietTransitionGeneration = preparedTransition && sameSeries && keepRangeFrame ? generation : 0;
+    // The slide-in card owns the transition visuals; no spinner under it.
+    quietTransitionGeneration = sameSeries && keepRangeFrame ? generation : 0;
     if (autoCinemaCandidate && autoCinemaGeneration && generation !== autoCinemaGeneration) cancelPendingAutoCinema();
     holdPlaybackAudio(generation);
     clearTimeout(controlsTimer);
     hero.classList.add('is-feed', 'is-preparing-video');
-    hero.classList.remove('is-catalog-loading', 'is-starting-video', 'is-range-source-reset');
+    hero.classList.remove('is-catalog-loading', 'is-starting-video', 'is-range-source-reset', 'is-portrait-video');
     hero.classList.toggle('is-episode-transition', sameSeries);
     hero.classList.toggle('is-range-transition', keepRangeFrame);
     hero.classList.toggle('is-native-media3-episode-transition', sameSeries && nativeAtSwitch && playbackEngineName() !== 'mpv');
@@ -5681,8 +5778,7 @@
         }
         return orientationCheck.then(function (vertical) {
           if ((vertical === true || vertical === 'unplayable') && generation === feedGeneration && !request.signal.aborted) {
-            if (vertical === true) showSkipVerticalOverlay();
-            skipVerticalFrom(autoEnterChainDirection, autoChain);
+            jumpToLandscape(feedIndex + autoEnterChainDirection, autoEnterChainDirection, autoChain, generation);
             return null;
           }
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
@@ -5780,7 +5876,7 @@
         function skipVerticalAutoDrama() {
           var chain = activePlayback.autoChain;
           if (chain >= 12) { showNotice(uiText('ui.landscapeSkipLimit', '连续多部都是竖屏剧，继续播放本剧')); return false; }
-          return skipVerticalFrom(activePlayback.autoDirection || 1, chain);
+          return jumpToLandscape(feedIndex + (activePlayback.autoDirection || 1), activePlayback.autoDirection || 1, chain, generation);
         }
         function attachPreparedSource() {
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
@@ -5834,7 +5930,7 @@
             pageMode() === 'recommend' && !detailModalOpen && !confirmOpen) {
           emptySourceStreak++;
           activePlayback.landscapeChecked = true;
-          skipVerticalFrom(activePlayback.autoDirection || 1, activePlayback.autoChain);
+          jumpToLandscape(feedIndex + (activePlayback.autoDirection || 1), activePlayback.autoDirection || 1, activePlayback.autoChain, generation);
           return;
         }
         if (error.name !== 'AbortError') {
@@ -8660,14 +8756,30 @@
   }
 
   var media = document.getElementById('hero-video');
+  function refreshPortraitVideoClass() {
+    var width = Number(media.videoWidth) || 0, height = Number(media.videoHeight) || 0;
+    var portrait = width > 0 && height > 0 && height > width;
+    var hero = document.getElementById('hero');
+    if (!hero) return;
+    var changed = hero.classList.toggle('is-portrait-video', portrait);
+    if (portrait) {
+      // Width of the video column relative to the screen, for the backdrop
+      // side panels to leave open.
+      var screenRatio = (window.innerWidth || 1) / (window.innerHeight || 1);
+      var column = Math.min(100, width / height / screenRatio * 100);
+      hero.style.setProperty('--portrait-column', column.toFixed(2) + '%');
+    }
+    if (changed && typeof syncNativePlayerBounds === 'function') syncNativePlayerBounds();
+  }
   media.addEventListener('loadedmetadata', function () {
+    if (typeof refreshPortraitVideoClass === 'function') refreshPortraitVideoClass();
     if (!activePlayback || activePlayback.generation !== feedGeneration) return;
     // Full-file fallback preparation cannot report video dimensions up front;
     // measure them here so automatic landscape preference still applies.
     if (landscapeAutoOnly && activePlayback.autoChain > 0 && !activePlayback.landscapeChecked && pageMode() === 'recommend' &&
         media.videoWidth > 0 && media.videoHeight > media.videoWidth) {
       activePlayback.landscapeChecked = true;
-      skipVerticalFrom(activePlayback.autoDirection || 1, activePlayback.autoChain);
+      jumpToLandscape(feedIndex + (activePlayback.autoDirection || 1), activePlayback.autoDirection || 1, activePlayback.autoChain, feedGeneration);
       return;
     }
     var position = activePlayback.position;
@@ -8682,6 +8794,7 @@
     markPlaybackStarted(activePlayback);
   });
   media.addEventListener('nativeframe', function () {
+    if (typeof refreshPortraitVideoClass === 'function') refreshPortraitVideoClass();
     // Media3 can report a rendered frame before WebView's `playing` callback.
     // Reveal that real frame without treating the episode as started for
     // history/progress purposes.
@@ -8755,7 +8868,10 @@
       hero.classList.remove('is-native-media3-episode-transition');
     }
   });
-  media.addEventListener('emptied', updatePlaybackControls);
+  media.addEventListener('emptied', function () {
+    document.getElementById('hero').classList.remove('is-portrait-video');
+    updatePlaybackControls();
+  });
   media.addEventListener('waiting', function () {
     if (!activePlayback) return;
     activePlayback.stableSince = 0;
@@ -9242,6 +9358,13 @@
     } catch (error) { initialHomeProgram = null; }
     // Warm the shared orientation database in the background; playback never
     // waits for it and falls back to live probing when it is not there yet.
+    // The locally measured verdicts apply immediately, before any fetch.
+    try {
+      var localVerdicts = JSON.parse(window.localStorage.getItem('hongguo.orientation.local') || '{}');
+      var merged = { series: {} };
+      Object.keys(localVerdicts).forEach(function (id) { merged.series[id] = { o: localVerdicts[id] }; });
+      applyOrientationDatabase(merged);
+    } catch (error) { /* Private-mode storage: probes keep working without it. */ }
     fetchOrientationDatabase();
     if (!initialHomeProgram || !window.HongguoTV.openHomeProgram(initialHomeProgram)) loadCatalog(uiText('nav.recommend', '推荐'));
 }());

@@ -719,6 +719,8 @@
     'ui.landscapeNoPrev': '上面暫時沒有橫屏劇',
     'ui.landscapeSkipLimit': '連續多部都是豎屏劇，繼續播放本劇',
     'ui.episodeBadge': '第 {episode} 集',
+    'ui.episodePreparing': '正在準備畫面',
+    'ui.failureAutoRetry': '正在自動重試播放…',
 "ui.firstRecommendation": "已經是第一條推薦",
   "ui.recommendationRetry": "推薦加載失敗，請再按向下重試",
   "ui.allRecommendations": "已瀏覽全部推薦",

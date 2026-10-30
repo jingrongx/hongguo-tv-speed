@@ -245,6 +245,16 @@
       var width = window.innerWidth || document.documentElement.clientWidth || 1;
       var height = window.innerHeight || document.documentElement.clientHeight || 1;
       if (rect.width > 1 && rect.height > 1 && bridge.bounds) {
+        // Portrait video filling a landscape surface: shrink the native
+        // surface to the centered video column so the page's blurred
+        // backdrop shows on both sides instead of mpv's black letterbox.
+        if (state.videoWidth > 0 && state.videoHeight > state.videoWidth &&
+            rect.width / width > .93 && rect.height / height > .93) {
+          var columnWidth = Math.min(rect.width, rect.height * state.videoWidth / state.videoHeight);
+          var left = rect.left + (rect.width - columnWidth) / 2;
+          bridge.bounds(left / width, rect.top / height, columnWidth / width, rect.height / height);
+          return;
+        }
         bridge.bounds(rect.left / width, rect.top / height, rect.width / width, rect.height / height);
       }
     } catch (ignored) {}

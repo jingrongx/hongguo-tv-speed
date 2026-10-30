@@ -722,6 +722,8 @@
     'ui.landscapeNoPrev': '上面暂时没有横屏剧',
     'ui.landscapeSkipLimit': '连续多部都是竖屏剧，继续播放本剧',
     'ui.episodeBadge': '第 {episode} 集',
+    'ui.episodePreparing': '正在准备画面',
+    'ui.failureAutoRetry': '正在自动重试播放…',
     'ui.firstRecommendation': '已经是第一条推荐',
     'ui.recommendationRetry': '推荐加载失败，请再按向下重试',
     'ui.allRecommendations': '已浏览全部推荐',
