@@ -140,6 +140,12 @@ final class AppUpdater {
             checkNow(false);
         }
         scheduleNextAutoCheck();
+        // Pull the page's prompt permission once the page is ready. The JS
+        // side pushes it too, but its first push races page readiness and is
+        // dropped by the trusted() gate; without this pull the native side
+        // can stay "not allowed" for the whole first session, swallowing
+        // every ready-to-install prompt.
+        host.allowPrompt(allowed -> { promptAllowed = allowed; maybePrompt(); });
     }
 
     /**
@@ -174,6 +180,10 @@ final class AppUpdater {
                         activity.runOnUiThread(() -> {
                             if (destroyed || latest != target || verifiedApkCode != target.code) return;
                             state = "ready"; downloaded = target.bytes; message = "更新包已验证，可继续安装"; publish();
+                            // A previously downloaded update restored from cache
+                            // gets the same one-gentle-notice offer as a fresh
+                            // download completing.
+                            maybeReadyPrompt(target);
                         });
                     } catch (Exception invalid) { apk.delete(); }
                 }
@@ -532,7 +542,15 @@ final class AppUpdater {
     void resume() {
         if (destroyed) return;
         int targetCode = preferences.getInt("install_target_code", 0);
-        if (targetCode <= 0) { publish(); return; }
+        if (targetCode <= 0) {
+            // No installer handoff in flight. A silently downloaded update can
+            // still be waiting: its one-shot ready prompt was very likely
+            // dropped (activity paused, or the user was on the playback page
+            // where the page refuses prompts). Re-offer on every foreground
+            // return — maybeReadyPrompt stays guarded by the "稍后" memory.
+            if (latest != null && "ready".equals(state) && verifiedApkCode == latest.code) maybeReadyPrompt(latest);
+            publish(); return;
+        }
         if (BuildConfig.VERSION_CODE >= targetCode) {
             clearInstallHandoff();
             state = "current"; message = "更新已安装"; publish(); return;

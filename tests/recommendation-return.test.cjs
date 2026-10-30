@@ -61,7 +61,7 @@ function fixture({ failSave = false, writeGate = null, sourceGate = null } = {})
     var libraryData={owner_id:'account',entries:[]},libraryReady=Promise.resolve(),libraryQueue=Promise.resolve(),libraryLoaded=true,libraryError='',libraryEditing=false;
     var playerReturnPage=null,playerReturnFocus=null;
     var searchPager={loaded:true,cancel:function(){}},searchKind='browse',activeSearchQuery='',searchHistory={load:function(){}};
-    var episodePrefetch={keepFor:function(){},consume:function(){return null},cancel:function(){}};
+    var episodePrefetch={keepFor:function(){},consume:function(){return null},cancel:function(){},peek:function(){return null}};
     function pageMode(){return shell.dataset.mode}function isPlaybackPage(){return pageMode()==='recommend'||pageMode()==='player'}function isLibraryPage(){return false}
     function playbackEngineName(){return ''}function nativePlaybackActive(){return false}
     function activeChannel(){return channel}function basicDrama(x){return {series_id:x.series_id,title:x.title,episode_count:x.episode_count}}

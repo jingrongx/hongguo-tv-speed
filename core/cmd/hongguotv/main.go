@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -33,6 +34,8 @@ type server struct {
 	accounts           *accountManager
 	numberInputs       *numberInputManager
 	searchHistoryStore *searchHistoryStore
+	orientationDB      *orientationDatabase
+	discover           *discoverFeed
 }
 
 type statusResponse struct {
@@ -50,7 +53,18 @@ func main() {
 	instanceID := flag.String("instance-id", "", "Android child process identity")
 	parentPID := flag.Int("parent-pid", 0, "exit when the Android host process ends")
 	dataDir := flag.String("data-dir", defaultLibraryDir(), "persistent local library directory")
+	crawlOrientation := flag.Bool("crawl-orientation", false, "measure unknown dramas' orientation from the public shelves, merge the database and exit")
+	crawlOut := flag.String("crawl-out", "core/cmd/hongguotv/data/series-orientation.json", "crawler output path")
+	crawlMax := flag.Int("crawl-max", 400, "maximum new dramas the crawler measures per run")
+	crawlPages := flag.Int("crawl-pages", 60, "maximum category pages the crawler enumerates per run")
 	flag.Parse()
+
+	if *crawlOrientation {
+		if err := runOrientationCrawl(*crawlOut, *crawlMax, *crawlPages); err != nil {
+			log.Fatalf("orientation crawl: %v", err)
+		}
+		return
+	}
 
 	root, err := fs.Sub(uiFiles, "ui")
 	if err != nil {
@@ -66,6 +80,9 @@ func main() {
 	s := &server{instanceID: *instanceID, startedAt: time.Now().UTC(), hongguo: newHongguoClient(), radar: newRadarService(*dataDir, nil), libraryStore: library}
 	s.numberInputs = newNumberInputManager()
 	defer s.numberInputs.close()
+	s.orientationDB = newOrientationDatabase(*dataDir)
+	s.orientationDB.startRefreshLoop(ctx)
+	s.discover = newDiscoverFeed()
 	s.searchHistoryStore, err = newSearchHistoryStore(*dataDir)
 	if err != nil {
 		log.Printf("prepare recent search: %v", err)
@@ -112,6 +129,7 @@ func main() {
 	mux.HandleFunc("/api/v1/Search", s.search)
 	mux.HandleFunc("/api/v1/play/info", s.playInfo)
 	mux.HandleFunc("/api/v1/PlayInfo", s.playInfo)
+	mux.HandleFunc("/api/v1/orientation", s.orientation)
 	// The TV APK owns the MiniReel resolver and media cache.  These routes are
 	// served by the same process so the UI never needs a second playback host.
 	mux.HandleFunc("/minireel-proxy/resolve", handleMiniReelResolve)
@@ -400,10 +418,49 @@ func (s *server) playInfo(w http.ResponseWriter, r *http.Request) {
 		result, err = s.hongguo.PlayInfoQuality(playbackCtx, r.URL.Query().Get("series_id"), r.URL.Query().Get("vid"), quality, r.URL.Query().Get("fallback") == "1")
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErrorCode(w, http.StatusBadGateway, playbackErrorCode(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "data": result})
+}
+
+// playbackErrorCode reduces wrapped playback errors to the stable machine
+// markers the UI's automatic-refresh whitelist matches on. Without it the
+// frontend only ever saw the human-readable message text, so transient
+// upstream timeouts and connection resets never triggered the one free
+// automatic retry.
+func playbackErrorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, errMiniReelVideoModelEmpty) {
+		return "VIDEO_MODEL_EMPTY"
+	}
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "response is empty"), strings.Contains(message, "video_model response is empty"),
+		strings.Contains(message, "multi_video_model empty"), strings.Contains(message, "没有返回地址"):
+		return "VIDEO_MODEL_EMPTY"
+	case errors.Is(err, context.DeadlineExceeded),
+		strings.Contains(message, "timed out"), strings.Contains(message, "timeout"),
+		strings.Contains(message, "超时"), strings.Contains(message, "i/o timeout"):
+		return "UPSTREAM_TIMEOUT"
+	case strings.Contains(message, "上游 HTTP"):
+		return "VIDEO_MODEL_HTTP"
+	case strings.Contains(message, "connection reset"):
+		return "ECONNRESET"
+	case strings.Contains(message, "connection refused"):
+		return "ECONNREFUSED"
+	case strings.Contains(message, "broken pipe"):
+		return "EPIPE"
+	case strings.Contains(message, "no such host"):
+		return "EAI_AGAIN"
+	case strings.Contains(message, "network is unreachable"), strings.Contains(message, "no route to host"):
+		return "ENETUNREACH"
+	case strings.Contains(message, "handshake timeout"):
+		return "ETIMEDOUT"
+	}
+	return ""
 }
 
 func parseQueryInt(r *http.Request, name string) int {
@@ -435,6 +492,16 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{"ok": false, "error": message})
+}
+
+// writeErrorCode adds the machine marker next to the human-readable message.
+// The UI keeps showing payload.error; automatic recovery matches payload.error_code.
+func writeErrorCode(w http.ResponseWriter, status int, code, message string) {
+	payload := map[string]any{"ok": false, "error": message}
+	if code != "" {
+		payload["error_code"] = code
+	}
+	writeJSON(w, status, payload)
 }
 
 func routeDescription(r *http.Request) string {

@@ -13,6 +13,7 @@
     var lastAllowed = null;
     var last = '';
     var lastData = null;
+    var ticks = 0;
     function refresh() {
       var bridge = options.bridge;
       if (!bridge) { options.render({ supported: false, state: 'browser', message: t('content.browserUpdateOnly', '请在 Android 正式版中检查更新') }); return; }
@@ -21,7 +22,11 @@
         lastData = JSON.parse(text);
         if (text !== last) { last = text; options.render(lastData); }
         var allowed = !!options.canPrompt();
-        if (allowed !== lastAllowed) { lastAllowed = allowed; bridge.setPromptAllowed(allowed); }
+        // Re-send periodically, not only on change: the page's very first
+        // push can race native page-readiness and be dropped, which left the
+        // native prompt gate closed for the whole session.
+        ticks++;
+        if (allowed !== lastAllowed || ticks % 10 === 0) { lastAllowed = allowed; bridge.setPromptAllowed(allowed); }
       } catch (error) { lastData = null; options.render({ supported: false, state: 'error', message: t('content.updateUnavailable', '更新功能暂时不可用') }); }
     }
     function check() { if (options.bridge) { refresh(); options.bridge.check(); } }

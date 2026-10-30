@@ -15,8 +15,11 @@ test('auto cinema is supported only on Android and webOS', () => {
   assert.equal(supports('android'), true);
   assert.equal(supports('webos'), true);
   assert.equal(supports('desktop'), false);
-  assert.equal(shouldEnter({ platform: 'android', enabled: true, page: 'recommend', initialCardLaunch: true, firstFrame: true, focusedOnPlayer: true }), false);
+  // The unified playback surface reports 'recommend' and enters cinema like
+  // the retired standalone player page ('player') still does on old shells.
+  assert.equal(shouldEnter({ platform: 'android', enabled: true, page: 'recommend', initialCardLaunch: true, firstFrame: true, focusedOnPlayer: true }), true);
   assert.equal(shouldEnter({ platform: 'desktop', enabled: true, page: 'player', initialCardLaunch: true, firstFrame: true, focusedOnPlayer: true }), false);
+  assert.equal(shouldEnter({ platform: 'android', enabled: true, page: 'account', initialCardLaunch: true, firstFrame: true, focusedOnPlayer: true }), false);
 });
 
 test('Android auto cinema defaults on and persists through the native bridge', () => {

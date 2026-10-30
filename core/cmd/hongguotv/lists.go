@@ -662,7 +662,15 @@ func (s *server) lists(w http.ResponseWriter, r *http.Request) {
 	var out ListResult
 	switch kind {
 	case "recommend":
-		out, e = client.Recommendations(r.Context(), q)
+		// The default home channel draws from the locally shuffled discovery
+		// pool instead of the official personal feed: truly random order,
+		// watched dramas excluded. shuffle=0 and the other channels keep the
+		// official upstream behavior.
+		if q.Get("channel") == "16" && q.Get("shuffle") != "0" {
+			out, e = s.discoverFeedHandler(r.Context(), q)
+		} else {
+			out, e = client.Recommendations(r.Context(), q)
+		}
 	case "new":
 		out, e = client.NewSeries(r.Context(), q)
 	case "rank":

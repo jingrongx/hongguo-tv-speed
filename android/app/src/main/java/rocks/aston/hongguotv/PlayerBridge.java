@@ -91,6 +91,12 @@ final class PlayerBridge implements NativePlayerAdapter {
         long position;
         boolean triedSoftwareHevcFallback;
         boolean forceSoftwareHevc;
+        // Gapless queue: the next episode appended to the ExoPlayer playlist.
+        // Media3 advances on its own at end-of-file; the bridge reports
+        // auto_next and keeps the session alive.
+        volatile boolean queued;
+        String queuedId;
+        JSONObject queuedData;
         Session(long generation, String id, List<String> urls, Map<String,String> headers,boolean live,boolean compatibility) {
             this.generation=generation;this.id=id;this.urls=urls;this.headers=headers;this.live=live;this.compatibility=compatibility;
             pcmAudio=PlaybackCodecPolicy.pcmAudio(compatibility,live,Build.VERSION.SDK_INT);
@@ -118,6 +124,38 @@ final class PlayerBridge implements NativePlayerAdapter {
     /** Media3 is available as a fallback on every supported Android release. */
     @JavascriptInterface public boolean isAvailable() { return nativePlaybackAvailable(Build.VERSION.SDK_INT); }
     @JavascriptInterface public String engine() { return "webview_media3"; }
+
+    /**
+     * Append the next episode of the same drama to the ExoPlayer playlist.
+     * The player advances by itself at end-of-file with a continuous A/V
+     * handover; the bridge reports auto_next so the page can move its
+     * bookkeeping without rebuilding the session. Returns false when the
+     * session cannot take a queue entry — the caller keeps its card fallback.
+     */
+    @JavascriptInterface public boolean queueNext(String source, String id, String dataJson) {
+        if (destroyed || source == null || source.isEmpty() || dataJson == null || dataJson.length() > 65536) return false;
+        // Same contract as a foreground source: only the APK's own local
+        // media endpoint may be opened.
+        if (!MediaUrlPolicy.valid(source)) return false;
+        Session target = session;
+        if (target == null || target.live || target.queued || !target.firstFrame) return false;
+        final JSONObject data;
+        try { data = dataJson.isEmpty() ? new JSONObject() : new JSONObject(dataJson); } catch (Exception ignored) { return false; }
+        final Session queued = target;
+        final String url = source, queueId = id;
+        handler.post(() -> {
+            if (destroyed || session != queued || player == null || queued.queued) return;
+            try {
+                MediaItem item = new MediaItem.Builder()
+                    .setMediaId(queued.generation + "#next")
+                    .setUri(url)
+                    .setMimeType(MimeTypes.VIDEO_MP4).build();
+                player.addMediaItem(item);
+                queued.queued = true; queued.queuedId = queueId; queued.queuedData = data;
+            } catch (Exception ignored) {}
+        });
+        return true;
+    }
 
     @JavascriptInterface public void play(String loadId, String payload) {
         // Never accept arbitrary external URLs from a web page.
@@ -277,6 +315,22 @@ final class PlayerBridge implements NativePlayerAdapter {
             }
             @Override public void onIsPlayingChanged(boolean playing){Session current=session;if(current()){if(!playing)current.clock.reset();else if(current.firstFrame)event(current,"playing");}}
             @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){if(current()){Session current=session;current.clock.reset();}}
+            @Override public void onMediaItemTransition(MediaItem mediaItem,int reason){
+                Session current=session;
+                if(current==null||player!=active||mediaItem==null)return;
+                if(!(current.generation+"#next").equals(mediaItem.mediaId))return;
+                // Only the natural end-of-file advance is gapless; a seek into
+                // the queued item keeps the old bookkeeping on purpose.
+                if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)return;
+                current.queued=false;
+                current.clock.reset();
+                JSONObject advancedData=current.queuedData;
+                current.queuedId=null;current.queuedData=null;
+                // The session id is unchanged, so progress/events keep
+                // matching. firstFrame stays true: the page treats the queued
+                // episode as a continuation of the same native session.
+                event(current,"auto_next",advancedData==null?new JSONObject():advancedData);
+            }
             @Override public void onPlayerError(PlaybackException error){
                 if(!current())return;
                 Session current=session;
@@ -475,7 +529,12 @@ final class PlayerBridge implements NativePlayerAdapter {
     private boolean currentMediaMatches(Session target){
         if(player==null||target==null)return false;
         MediaItem item=player.getCurrentMediaItem();
-        return item!=null&&(target.generation+"#"+target.candidate).equals(item.mediaId);
+        if(item==null)return false;
+        String mediaId=item.mediaId;
+        // The queued gapless episode keeps the same session generation: its
+        // errors and state changes must stay attributable to this session.
+        return (target.generation+"#"+target.candidate).equals(mediaId)
+            || (target.generation+"#next").equals(mediaId);
     }
     private void clearTimeout(){if(timeout!=null){handler.removeCallbacks(timeout);timeout=null;}}
     private void releasePlayer(){clearTimeout();ExoPlayer old=player;player=null;playerHeaders=Collections.emptyMap();playerCompatibility=false;playerPcmAudio=false;playerLive=false;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}

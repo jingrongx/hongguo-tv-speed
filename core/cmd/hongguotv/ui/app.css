@@ -338,7 +338,13 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 /* Official-style episode transition: the new episode's cover slides in from
    the right like a presentation page, covering the swap while the last frame
    stays visible underneath — no black flash. */
-.episode-transition { position: absolute; z-index: 12; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: flex-end; box-sizing: border-box; padding: 40px 40px 224px; overflow: hidden; background: #08090d; opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+/* Vertical-drama skip: a translucent scrim with one large line, so the
+   automatic hop is visible instead of looking like a silent stall. */
+.skip-vertical-overlay { position: absolute; z-index: 11; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; background: rgba(4, 5, 9, .58); opacity: 0; transition: opacity .26s ease; pointer-events: none; }
+.skip-vertical-overlay strong { max-width: 76%; color: #ffffff; font-size: 54px; font-weight: 700; text-align: center; text-shadow: 0 4px 18px rgba(0,0,0,.8); }
+.skip-vertical-overlay.is-visible { opacity: 1; }
+.skip-vertical-overlay.is-hidden { display: none; }
+.episode-transition { position: absolute; z-index: 12; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: flex-end; box-sizing: border-box; padding: 40px 40px 224px; overflow: hidden; background: #08090d radial-gradient(120% 90% at 50% 8%, #222737 0%, #08090d 62%); opacity: 0; transition: opacity .3s ease; pointer-events: none; }
 .episode-transition.is-visible { opacity: 1; }
 .episode-transition-cover { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; object-fit: cover; filter: brightness(.72) saturate(.95); transform: translateX(102%); transition: transform .34s cubic-bezier(.25,.7,.3,1); }
 .episode-transition.is-visible .episode-transition-cover { transform: none; }

@@ -1025,7 +1025,7 @@
   "connection.retryingDetail": "正在重新檢查 webOS 系統服務和本機資料服務…",
   "connection.bridgeUnavailable": "找不到 webOS 系統服務介面",
   "ui.browserPreview": "網頁預覽",
-  "ui.updateDefault": "啟動後每天自動檢查一次，播放時不打擾。",
+  "ui.updateDefault": "啟動後每小時自動檢查一次，靜默下載，就緒後詢問安裝。",
   "ui.checking": "檢查中…",
   "ui.viewUpdate": "查看更新 {version}",
   "ui.installUpdate": "安裝更新",

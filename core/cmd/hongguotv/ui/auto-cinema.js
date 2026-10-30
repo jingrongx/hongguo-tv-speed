@@ -41,7 +41,10 @@
     };
   }
   function shouldEnter(state) {
-    return !!(state && supports(state.platform) && state.enabled && state.page === 'player' &&
+    // The unified playback surface reports 'recommend'; 'player' is kept for
+    // shells that still run the retired standalone player page.
+    return !!(state && supports(state.platform) && state.enabled &&
+      (state.page === 'recommend' || state.page === 'player') &&
       state.initialCardLaunch && state.firstFrame && state.focusedOnPlayer && !state.userExited);
   }
 

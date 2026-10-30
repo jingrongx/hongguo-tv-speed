@@ -65,7 +65,7 @@
         if (!options.isCurrent(owner.playback)) { reset(); return; }
         if (!options.canAutoplay()) { cancelAutoplay(); return; }
         var remaining = Math.max(0, deadline - now());
-        if (!remaining) { choose(0); return; }
+        if (!remaining) { choose(0, true); return; }
         if (options.countdown) options.countdown(Math.ceil(remaining / 1000));
         timer = schedule(tick, Math.min(1000, remaining));
       }
@@ -79,12 +79,12 @@
       options.hide(restoreFocus !== false, true);
       return true;
     }
-    function choose(index) {
+    function choose(index, automatic) {
       if (!open || !entry || !options.isCurrent(entry.playback)) { reset(); return false; }
       var item = entry.items[index];
       if (!item) return false;
       reset();
-      options.play(item);
+      options.play(item, automatic === true);
       return true;
     }
     return { offer: offer, flush: flush, reset: reset, close: close, choose: choose, ready: ready,

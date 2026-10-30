@@ -48,7 +48,7 @@ function fixture({failWrite=false,ready=true,engine='standard',sourceGate=null,d
     var playbackQuality='',playbackQualities=[],playbackPreferences={quality:'720P'},feedIndex=0;
     var feedItems=[{series_id:'9001',title:'fixture',episode_count:3,vid_list:['111','222','333']}];
     var activePlayback={item:feedItems[0],episode:1,vid:'111',owner:2,generation:1,started:true,lastWrite:0,completed:false};
-    var episodePrefetch={keepFor:function(){},consume:function(){return ${prefetchReady ? "{promise:Promise.resolve({path:'/media/prefetched.mp4',quality:'720P',mode:'full'}),timing:{started_at:1,ready_at:2},cancel:function(){}}" : 'null'}}};
+    var episodePrefetch={keepFor:function(){},consume:function(){return ${prefetchReady ? "{promise:Promise.resolve({path:'/media/prefetched.mp4',quality:'720P',mode:'full'}),timing:{started_at:1,ready_at:2},cancel:function(){}}" : 'null'}},peek:function(){return null}};
     function pageMode(){return 'player'}function isPlaybackPage(){return true}function isLibraryPage(){return false}
     function basicDrama(x){return x}function firstVid(x){return x.vid_list[0]}
     function getDetail(x){return ${detailGate ? 'detailGate.promise.then(function () { return x; })' : 'Promise.resolve(x)'}}function libraryEntry(){return null}function resumeEpisode(){return 1}

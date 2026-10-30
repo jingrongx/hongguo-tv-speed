@@ -1028,7 +1028,7 @@
     'connection.retryingDetail': '正在重新检查 webOS 系统服务和本机数据服务…',
     'connection.bridgeUnavailable': '未找到 webOS 系统服务接口',
     'ui.browserPreview': '网页预览',
-    'ui.updateDefault': '启动后每天自动检查一次，播放时不打扰。',
+    'ui.updateDefault': '启动后每小时自动检查一次，静默下载，就绪后询问安装。',
     'ui.checking': '检查中…',
     'ui.viewUpdate': '查看更新 {version}',
     'ui.installUpdate': '安装更新',

@@ -109,7 +109,7 @@
       previous.expectedVid = target.vid;
       return { promise: previous.promise, timing: previous.timing, cancel: function () { invalidate(previous); } };
     }
-    return { maybe: maybe, cancel: cancel, keepFor: keepFor, consume: consume };
+    return { maybe: maybe, cancel: cancel, keepFor: keepFor, consume: consume, peek: peek };
   }
   function retryableError(error) {
     if (!error) return false;

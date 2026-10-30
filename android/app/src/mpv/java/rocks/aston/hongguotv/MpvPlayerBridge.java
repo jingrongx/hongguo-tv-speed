@@ -80,6 +80,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         // bridge reports an auto_next event and keeps the session alive.
         String queuedId;
         JSONObject queuedData;
+        // Set synchronously on the JS bridge thread (where queueNext runs)
+        // so a second timeupdate cannot double-append before the posted
+        // command lands on the UI thread.
+        volatile boolean queuePending;
         boolean firstFileLoaded;
         long position, duration;
         long loadRequestedAt, fileLoadedAt, outputReadyAt;
@@ -143,21 +147,41 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     @JavascriptInterface public boolean queueNext(String source, String id, String dataJson) {
         Session target = session;
         if (destroyed || target == null || !current(target) || target.player == null) return false;
-        if (target.terminal || target.queuedId != null || !target.outputReady) return false;
+        if (target.terminal || target.queuedId != null || target.queuePending || !target.outputReady) return false;
         if (source == null || source.isEmpty()) return false;
-        try {
-            JSONObject data = dataJson == null ? new JSONObject() : new JSONObject(dataJson);
-            target.player.command(new String[]{"loadfile", source, "append-play"});
-            target.queuedId = id;
-            target.queuedData = data;
-            JSONObject detail = new JSONObject();
-            try { detail.put("kind", "queue_next").put("episode", data.optInt("episode", 0)); } catch (Exception ignored) {}
-            event(target, "info", detail);
-            return true;
-        } catch (Exception ignored) {
-            target.queuedId = null; target.queuedData = null;
-            return false;
-        }
+        // Same contract as a foreground source: only the APK's own local
+        // media endpoint may be opened.
+        if (!MediaUrlPolicy.valid(source)) { gaplessLog("queueNext rejected: invalid url " + source); return false; }
+        final JSONObject data;
+        try { data = dataJson == null ? new JSONObject() : new JSONObject(dataJson); }
+        catch (Exception ignored) { return false; }
+        final Session queued = target;
+        final String queuedSource = source;
+        // Every other bridge method posts its mpv work: MPVLib enforces the
+        // UI thread, and this call arrives on the WebView bridge thread. The
+        // command itself therefore runs asynchronously; the boolean only
+        // reflects the synchronous session decision.
+        target.queuePending = true;
+        gaplessLog("queueNext accepted ep=" + data.optInt("episode", 0));
+        handler.post(() -> {
+            if (destroyed || session != queued || queued.queuedId != null || !current(queued)) {
+                queued.queuePending = false;
+                return;
+            }
+            try {
+                queued.player.command(new String[]{"loadfile", queuedSource, "append-play"});
+                queued.queuedId = id;
+                queued.queuedData = data;
+                gaplessLog("queueNext appended ep=" + data.optInt("episode", 0));
+                JSONObject detail = new JSONObject();
+                try { detail.put("kind", "queue_next").put("episode", data.optInt("episode", 0)); } catch (Exception ignored) {}
+                event(queued, "info", detail);
+            } catch (RuntimeException failure) {
+                gaplessLog("queueNext command failed: " + failure);
+                queued.queuePending = false;
+            }
+        });
+        return true;
     }
 
     @JavascriptInterface public boolean safeStart() { return false; }
@@ -312,6 +336,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             option(active, "linear-downscaling", "no"); option(active, "sigmoid-upscaling", "no");
             option(active, "ao", "opensles,audiotrack"); option(active, "audiotrack-pcm-float", "no");
             option(active, "keep-open", "yes"); option(active, "idle", "yes");
+            // Open and demux the queued next episode while the current one
+            // plays: without this mpv only touches the appended file at
+            // end-of-file, and the decoder bring-up costs about a second of
+            // freeze on TV boxes.
+            option(active, "prefetch-playlist", "yes");
             option(active, "force-window", "no"); option(active, "osd-level", "0");
             option(active, "input-default-bindings", "no"); option(active, "input-vo-keyboard", "no");
             option(active, "sid", "no"); option(active, "cache", "yes");
@@ -358,6 +387,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                         // timeout path instead of changing playback timing.
                         if (!target.output.loaded) return;
                         if (reason == 0 && target.outputReady) {
+                            gaplessLog("endFile reason=0 queued=" + (target.queuedId == null ? "no" : "yes"));
                             if (target.queuedId != null) {
                                 // mpv already moved to the queued episode on
                                 // its own: report the last progress (history
@@ -368,7 +398,10 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                             }
                             finish(target);
                         }
-                        else if ((reason == 4 || error < 0) && target.outputReady) fail(target, "media", error);
+                        else if ((reason == 4 || error < 0) && target.outputReady) {
+                            gaplessLog("endFile reason=" + reason + " error=" + error);
+                            fail(target, "media", error);
+                        }
                     });
                 }
                 @Override public void commandReply(long requestId, int error) {
@@ -382,7 +415,15 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                 }
                 @Override public void eventProperty(String name, boolean value) {
                     post(target -> {
-                        if ("eof-reached".equals(name) && value && target.outputReady) finish(target);
+                        // A queued next episode owns the end-of-file boundary:
+                        // mpv advances to it on its own (keep-open only holds
+                        // the LAST playlist entry). Finishing here used to
+                        // kill the session before the queued file could play,
+                        // which silently disabled the whole gapless queue.
+                        if ("eof-reached".equals(name) && value && target.outputReady) {
+                            gaplessLog("eof-reached queued=" + (target.queuedId == null ? "no" : "yes:" + target.queuedId));
+                            if (target.queuedId == null) finish(target);
+                        }
                         else if ("vo-configured".equals(name)) { target.output.configured = value; rendered(target); }
                         else if ("paused-for-cache".equals(name) && target.outputReady && target.wantsPlay && !background)
                             MpvPlayerBridge.this.event(target, value ? "buffering" : "playing", null);
@@ -394,6 +435,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                     post(target -> {
                         if (value == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
                             boolean queuedAdvance = target.firstFileLoaded && target.queuedId != null;
+                            if (queuedAdvance) gaplessLog("fileLoaded queued advance ep=" + (target.queuedData == null ? "?" : String.valueOf(target.queuedData.optInt("episode", 0))));
                             target.output.loaded = true;
                             target.fileLoadedAt = SystemClock.uptimeMillis();
                             if (queuedAdvance) {
@@ -403,13 +445,17 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                                 target.queuedId = null; target.queuedData = null;
                                 // Re-arm the per-file state machine: readiness,
                                 // green probe and stall watch all restart for
-                                // the new file on this same session.
+                                // the new file on this same session. The
+                                // output timeout must come back too — without
+                                // it a queued file that never renders hangs
+                                // the session with no recovery path.
                                 target.output.loaded = true;
                                 target.outputReady = false;
                                 target.output.restarted = false;
                                 target.greenProbes = 0; target.greenStreak = 0;
                                 target.dropSampleAt = 0; target.stallStrikes = 0;
                                 target.pendingSeek = false;
+                                armTimeout(target);
                                 MpvPlayerBridge.this.event(target, "auto_next", advancedData == null ? new JSONObject() : advancedData);
                             }
                             target.firstFileLoaded = true;
@@ -485,10 +531,14 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     private void finish(Session target) {
         if (!current(target)) return;
+        gaplessLog("finish -> ended");
         reportProgress(target);
         event(target, "ended", null); target.terminal = true;
         try { target.player.setPropertyBoolean("pause", true); } catch (RuntimeException ignored) {}
         handler.removeCallbacks(target.timeout);
+    }
+    private static void gaplessLog(String message) {
+        android.util.Log.i("HongguoMPV", message);
     }
     /** Broken hardware output is provable only from the presented pixels. */
     private static boolean greenProbeSupported() {
@@ -583,6 +633,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     private void fail(Session target, String kind, int code) {
         if (!current(target)) return;
+        gaplessLog("fail kind=" + kind + " code=" + code);
         cancelProbe(target);
         // Hardware decoding must never leave a dead screen: when the decoder
         // fails to start, dies mid-play, or provably presents a broken

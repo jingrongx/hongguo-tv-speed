@@ -11,6 +11,19 @@ function fixture(lookup) {
   const p=create({lookup:lookup || (async x=>target({quality:x.quality})),prepare:async(x,signal)=>{calls.push(x);signals.push(signal);return {path:'/media/next.mp4'};}});
   return {p,calls,signals};
 }
+test('peek exposes a ready entry for gapless queueing without consuming it', async()=>{
+  const f=fixture();
+  assert.equal(f.p.peek(), null, 'an idle coordinator has nothing to peek');
+  f.p.maybe(info());
+  await tick();
+  const peeked=f.p.peek();
+  assert.ok(peeked, 'a ready entry must be peekable — the gapless queue depends on it');
+  assert.equal(peeked.target.vid,'222');
+  assert.equal(peeked.data.path,'/media/next.mp4');
+  // Peeking is read-only: a later consume for the same target still works.
+  assert.ok(f.p.consume(target()), 'consume still works after peek');
+});
+
 test('starts once after five stable playback seconds, early in a long episode', async()=>{
   const f=fixture();
   for(const x of [info({stable_seconds:4.99}),info({stable_seconds:0,position:110}),info({stable_seconds:NaN}),info({stable_seconds:undefined}),info({paused:true}),info({active:false}),info({started:false}),info({ended:true}),info({duration:NaN}),info({duration:Infinity})]) f.p.maybe(x);
