@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 357,
+  "version_code": 358,
   "min_sdk": 23,
-  "version_name": "0.2.157",
+  "version_name": "0.2.158",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63037038,
-  "sha256": "71b2fa8d516febf02111c4891b0e0bbac701663652fd8c61f30a7ccbd2285e30",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.157/hongguo-tv-speed-mpv-0.2.157.apk",
-  "release_notes": "极速版",
+  "size": 63037083,
+  "sha256": "2f2cf06e8eb9c2ec64a489194ae4bcba44eb55af7818b8eaffec4bedad23b487",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.158/hongguo-tv-speed-mpv-0.2.158.apk",
+  "release_notes": "- 应用更名为「红果极速」：桌面图标、通知栏、启动画面与界面文案全部同步，避免手机安全软件把名称误判为仿冒应用而拦截安装\n- 功能与内容完全不变，直接覆盖安装即可，账号和观看记录都会保留",
   "variant": "mpv"
 }
