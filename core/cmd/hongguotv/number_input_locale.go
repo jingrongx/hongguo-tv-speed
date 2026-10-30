@@ -45,7 +45,7 @@ type numberInputLocale struct {
 
 var numberInputLocales = map[string]numberInputLocale{
 	"zh-CN": {
-		DocumentTitle:       "红果短剧 · 手机输入",
+		DocumentTitle:       "红果极速 · 手机输入",
 		ExpiredTitle:        "输入已结束",
 		ExpiredCopy:         "请在电视上重新打开扫码输入，再扫描新的二维码。",
 		CompleteTitle:       "已发送到电视",

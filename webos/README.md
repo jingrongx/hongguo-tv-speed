@@ -1,4 +1,4 @@
-# 红果短剧 webOS 实验版
+# 红果极速 webOS 实验版
 
 这个目录是 LG webOS TV 的实验性 Web App 外壳。它复用 Android、桌面和浏览器预览使用的 Web UI，并通过 webOS JavaScript Service 提供本机 HTTP 边界。
 

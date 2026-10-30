@@ -63,7 +63,7 @@ final class UpdatePolicy {
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
                 || path == null || !path.equals(prefix + "hongguo-tv-speed-" +
                     (installedPackage.endsWith(".mpv") ? "mpv-" : "") + name + ".apk"))
-            throw new IllegalArgumentException("安装包地址不是红果短剧极速版公开发行文件");
+            throw new IllegalArgumentException("安装包地址不是红果极速公开发行文件");
     }
 
     static boolean matchingArchive(String installedPackage, int installedCode, String archivePackage,

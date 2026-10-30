@@ -13,7 +13,7 @@
     "ui.webosUpdateNotice": "发现 webOS 新版本 {version}，可在设置中查看安装说明。",
     "ui.webosInstallGuide": "请在电脑上打开以下发布页面，下载 IPK 后使用 webOS Dev Manager 手动安装：",
 
-    'app.name': '红果短剧',
+    'app.name': '红果极速',
     'nav.recommend': '推荐',
     'nav.search': '找剧',
     'nav.rank': '排行榜',

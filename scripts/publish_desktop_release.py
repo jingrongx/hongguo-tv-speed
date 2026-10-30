@@ -64,7 +64,7 @@ def publish(directory,notes,readme):
             if any(a['name']==p.name for a in release['assets']):verify_assets(release,(p,))
     else:
         release=api(f'repos/{REPOSITORY}/releases',payload={'tag_name':tag,'target_commitish':'main','draft':True,
-           'name':f'红果短剧桌面版 {version}（macOS / Windows）','body':notes.read_text(),'make_latest':'false'})
+           'name':f'红果极速桌面版 {version}（macOS / Windows）','body':notes.read_text(),'make_latest':'false'})
     if release['draft']:
         for p in files:
             if not any(a['name']==p.name for a in release['assets']):verify_assets({'assets':[upload_asset(release['id'],p)]},(p,))

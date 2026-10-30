@@ -23,7 +23,7 @@ async function run() {
   try {
     for (var i = 0; i < 4; i++) {
       var kinds = ['search', 'danmaku', 'phone', 'code'];
-      var values = ['红果短剧', '弹幕文本', '13800138000', '012345'];
+      var values = ['红果极速', '弹幕文本', '13800138000', '012345'];
       var kind = kinds[i], value = values[i];
       var started = await manager.start(kind, '+86');
       assert.strictEqual(started.kind, kind);

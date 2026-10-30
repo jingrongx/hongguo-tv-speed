@@ -23,7 +23,7 @@ def member_bytes(archive, relative):
 
 def package(cache, output):
     sources = json.loads((ROOT / 'scripts/mpv_sources.json').read_text())
-    entries, notices = {}, ['红果短剧 MPV — 第三方库与许可\n'
+    entries, notices = {}, ['红果极速 MPV — 第三方库与许可\n'
         'libmpv: LGPL 构建；FFmpeg: LGPLv3（disable-gpl / disable-nonfree / enable-version3）。\n'
         '这些库动态链接到应用。对应版本的库源码、补丁、构建及替换工具随 MPV 发布提供。\n'
         '允许为调试修改后的 LGPL 库进行必要的逆向工程和库替换；不提供原发行签名密钥。\n'

@@ -3960,7 +3960,7 @@
     var values = [];
     if (item.episode_count) values.push(uiText('content.episodeCount', '全{count}集', { count: item.episode_count }));
     if (item.score) values.push(item.score + ' ' + uiText('ui.scoreSuffix', '分'));
-    return values.join(' · ') || uiText('app.name', '红果短剧');
+    return values.join(' · ') || uiText('app.name', '红果极速');
   }
 
   function setCover(image, item) {
@@ -4032,12 +4032,12 @@
     if (backdrop) {
       setBackdrop(backdrop, item, document.getElementById('hero-loading-poster'));
     }
-    if (title) title.textContent = item.title || uiText('app.name', '红果短剧');
+    if (title) title.textContent = item.title || uiText('app.name', '红果极速');
     if (episode) episode.textContent = waitingForProgress ? item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : '' : uiText('content.episodeNumber', '第{episode}集', { episode: item.start_episode || 1 }) + (item.episode_count ? ' · ' + uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : '');
     if (summary) summary.textContent = item.intro || '';
-    if (topTitle) topTitle.textContent = item.title || uiText('app.name', '红果短剧');
+    if (topTitle) topTitle.textContent = item.title || uiText('app.name', '红果极速');
     if (topEpisode) topEpisode.textContent = waitingForProgress ? '' : uiText('content.episodeNumber', '第{episode}集', { episode: item.start_episode || 1 });
-    if (placeholderTitle) placeholderTitle.textContent = item.title || uiText('app.name', '红果短剧');
+    if (placeholderTitle) placeholderTitle.textContent = item.title || uiText('app.name', '红果极速');
     if (placeholderSummary) placeholderSummary.textContent = item.intro || '';
     updateSavedButtons();
     if (engagement) engagement.select(activePlayback && activePlayback.item.series_id === item.series_id ? { series_id: item.series_id, vid: activePlayback.vid } : null);
@@ -4343,7 +4343,7 @@
     ++confirmationGeneration;
     var generation = confirmationGeneration;
     var epoch = accountEpoch;
-    var title = playback.item.title || uiText('app.name', '红果短剧');
+    var title = playback.item.title || uiText('app.name', '红果极速');
     confirmReturnFocus = document.getElementById('hero-feed-focus');
     confirmAfterClose = after || null;
     confirmOpen = true;
@@ -4432,7 +4432,7 @@
       card.className = 'end-recommendation-card'; card.dataset.focus = 'end-related-' + item.series_id;
       var image = document.createElement('img'); setCover(image, item);
       var title = document.createElement('strong'); title.textContent = item.title;
-      var meta = document.createElement('small'); meta.textContent = item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('app.name', '红果短剧');
+      var meta = document.createElement('small'); meta.textContent = item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('app.name', '红果极速');
       var poster = dramaPoster(image, item);
       if (index === 0) {
         var badge = document.createElement('span'); badge.id = 'end-recommendation-countdown'; badge.className = 'end-recommendation-countdown is-hidden';
@@ -6203,7 +6203,7 @@
     if (item.score) values.push(item.score + uiText('ui.scoreSuffix', '分'));
     if (item.episode_count) values.push(uiText('content.episodeCount', '全{count}集', { count: item.episode_count }));
     if (item.tags && item.tags.length) values.push(item.tags.slice(0, 2).join(' · '));
-    return values.join(' · ') || uiText('app.name', '红果短剧');
+    return values.join(' · ') || uiText('app.name', '红果极速');
   }
 
   function rankLabel() {
@@ -7460,7 +7460,7 @@
         var card = document.createElement('button'); card.className = 'related-card'; card.dataset.focus = 'related-' + item.series_id;
         var image = document.createElement('img'); image.className = 'related-card-image'; setCover(image, item);
         var title = document.createElement('strong'); title.textContent = item.title || uiText('ui.unnamedDrama', '未命名短剧');
-        var meta = document.createElement('span'); meta.textContent = item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('app.name', '红果短剧');
+        var meta = document.createElement('span'); meta.textContent = item.episode_count ? uiText('content.episodeCount', '全{count}集', { count: item.episode_count }) : uiText('app.name', '红果极速');
         card.appendChild(dramaPoster(image, item)); card.appendChild(title); card.appendChild(meta); card.addEventListener('click', function () { openDetail(item); }); list.appendChild(card);
       });
       message.textContent = currentDetail.related && currentDetail.related.length ? '' : uiText('ui.noRelated', '暂无相关推荐。');
@@ -7600,7 +7600,7 @@
     if (item.episode_count) meta.push(uiText('ui.totalEpisodes', '共{count}集', { count: item.episode_count }));
     if (item.score) meta.push(item.score + uiText('ui.scoreSuffix', '分'));
     if (item.tags && item.tags.length) meta.push(item.tags.slice(0, 3).join(' · '));
-    document.getElementById('detail-meta').textContent = meta.join(' · ') || uiText('app.name', '红果短剧');
+    document.getElementById('detail-meta').textContent = meta.join(' · ') || uiText('app.name', '红果极速');
     document.getElementById('detail-intro').textContent = item.intro || '';
     document.getElementById('detail-intro').classList.toggle('is-hidden', !item.intro);
     renderDetailActors(item.actors || []);

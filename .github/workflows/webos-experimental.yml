@@ -63,7 +63,7 @@ jobs:
               "${{ steps.release.outputs.asset }}" \
               "dist/webos/SHA256SUMS.txt" \
               --repo aston314/hongguo-tv-releases \
-              --title "红果短剧 webOS 测试版 ${{ steps.release.outputs.version }}" \
+              --title "红果极速 webOS 测试版 ${{ steps.release.outputs.version }}" \
               --prerelease \
               --notes-file docs/webos-release.md
           fi

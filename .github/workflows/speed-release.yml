@@ -264,7 +264,7 @@ jobs:
             echo "**MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk"
             echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
           } > stage/release_body.md
-          gh release create "v$VERSION" --title "红果短剧 TV 极速版 v$VERSION" \
+          gh release create "v$VERSION" --title "红果极速 TV v$VERSION" \
             --notes-file stage/release_body.md --draft=false --prerelease=false \
             || gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
           gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber

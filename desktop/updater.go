@@ -323,9 +323,9 @@ func verifyDesktopZIP(path, platform string) error {
 		return err
 	}
 	defer z.Close()
-	required := map[string]string{"红果短剧.exe": "MZ", "hongguo-tv-core.exe": "MZ"}
+	required := map[string]string{"红果极速.exe": "MZ", "hongguo-tv-core.exe": "MZ"}
 	if platform == "macos-universal" {
-		required = map[string]string{"红果短剧.app/Contents/MacOS/红果短剧": "\xca\xfe\xba\xbe", "红果短剧.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbe", "红果短剧.app/Contents/Info.plist": ""}
+		required = map[string]string{"红果极速.app/Contents/MacOS/红果极速": "\xca\xfe\xba\xbe", "红果极速.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbe", "红果极速.app/Contents/Info.plist": ""}
 	}
 	seen := map[string]bool{}
 	var total uint64

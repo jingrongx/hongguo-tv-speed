@@ -313,7 +313,7 @@ final class AppUpdater {
 
     private void showUpdatePrompt(Manifest target) {
         AlertDialog prompt = new AlertDialog.Builder(activity).setTitle("发现新版本 " + target.name)
-            .setMessage((target.notes.isEmpty() ? "红果短剧有新版本可以安装。" : target.notes) + "\n\n覆盖升级保留账号和记录。")
+            .setMessage((target.notes.isEmpty() ? "红果极速有新版本可以安装。" : target.notes) + "\n\n覆盖升级保留账号和记录。")
             .setNegativeButton("稍后", (d, which) -> defer(target))
             .setPositiveButton("立即更新", (d, which) -> beginDownload(target)).create();
         prompt.setOnCancelListener(d -> defer(target));
@@ -494,7 +494,7 @@ final class AppUpdater {
     private void launchInstaller(Manifest target) {
         if (!apk.isFile() || apk.length() != target.bytes || verifiedApkCode != target.code || destroyed) return;
         if (Build.VERSION.SDK_INT >= 26 && !activity.getPackageManager().canRequestPackageInstalls()) {
-            showInstallPermission(target, "请允许红果短剧安装更新。授权返回后会自动继续安装。");
+            showInstallPermission(target, "请允许红果极速安装更新。授权返回后会自动继续安装。");
             return;
         }
         try {
@@ -509,7 +509,7 @@ final class AppUpdater {
     private void launchSessionInstaller(Manifest target, String reason) {
         if (!apk.isFile() || apk.length() != target.bytes || verifiedApkCode != target.code || destroyed) return;
         if (Build.VERSION.SDK_INT >= 26 && !activity.getPackageManager().canRequestPackageInstalls()) {
-            showInstallPermission(target, "请先允许红果短剧安装更新，再使用备用安装流程。");
+            showInstallPermission(target, "请先允许红果极速安装更新，再使用备用安装流程。");
             return;
         }
         rememberInstallHandoff(target, "session");

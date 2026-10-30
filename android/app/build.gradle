@@ -2,7 +2,7 @@ plugins {
     id "com.android.application"
 }
 
-def appVersion = "0.2.157"
+def appVersion = "0.2.158"
 // Same formula as the release pipeline: major*10000 + minor*100 + patch,
 // so a locally built APK always upgrades cleanly over a CI-built one.
 def computedVersionCode = appVersion.tokenize('.').withIndex().collect { part, i -> (part as int) * (i == 0 ? 10000 : i == 1 ? 100 : 1) }.sum()
@@ -42,7 +42,7 @@ android {
     productFlavors {
         standard {
             dimension "player"
-            resValue "string", "app_name", "红果短剧"
+            resValue "string", "app_name", "红果极速"
             buildConfigField "String", "VARIANT_ID", '"standard"'
             buildConfigField "String", "PLAYER_ENGINE", '"webview_media3"'
         }
@@ -51,7 +51,7 @@ android {
             applicationIdSuffix ".mpv"
             minSdk 23
             versionCode computedVersionCode
-            resValue "string", "app_name", "红果短剧"
+            resValue "string", "app_name", "红果极速"
             buildConfigField "String", "VARIANT_ID", '"mpv"'
             buildConfigField "String", "PLAYER_ENGINE", '"mpv"'
         }
@@ -79,7 +79,7 @@ android {
         debug {
             applicationIdSuffix ".debug"
             versionNameSuffix "-debug"
-            resValue "string", "app_name", "红果短剧"
+            resValue "string", "app_name", "红果极速"
         }
         release {
             minifyEnabled false

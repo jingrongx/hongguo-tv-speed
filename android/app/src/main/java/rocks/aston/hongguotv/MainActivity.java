@@ -265,7 +265,7 @@ public class MainActivity extends Activity {
 
     private void waitForCore() {
         if (startupThread != null && startupThread.isAlive()) return;
-        startupMessage.setText("正在启动红果短剧…");
+        startupMessage.setText("正在启动红果极速…");
         startupRetry.setVisibility(View.GONE);
         startupPanel.setVisibility(View.VISIBLE);
         if (activityForeground) startupAnimation.start();
@@ -666,7 +666,7 @@ public class MainActivity extends Activity {
 
     private void showExitConfirmation() {
         exitDialog = new AlertDialog.Builder(this)
-                .setTitle("退出红果短剧？")
+                .setTitle("退出红果极速？")
                 .setNegativeButton("取消", (dialog, which) -> dialog.dismiss())
                 .setPositiveButton("退出", (dialog, which) -> finish())
                 .create();

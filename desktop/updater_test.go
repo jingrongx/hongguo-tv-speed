@@ -42,9 +42,9 @@ func updateFixture(t *testing.T, platform string) (desktopManifest, []byte) {
 	t.Helper()
 	var b bytes.Buffer
 	z := zip.NewWriter(&b)
-	files := map[string]string{"红果短剧.exe": "MZshell", "hongguo-tv-core.exe": "MZcore", "README.txt": "test"}
+	files := map[string]string{"红果极速.exe": "MZshell", "hongguo-tv-core.exe": "MZcore", "README.txt": "test"}
 	if platform == "macos-universal" {
-		files = map[string]string{"红果短剧.app/Contents/MacOS/红果短剧": "\xca\xfe\xba\xbeShell", "红果短剧.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbeCore", "红果短剧.app/Contents/Info.plist": "plist"}
+		files = map[string]string{"红果极速.app/Contents/MacOS/红果极速": "\xca\xfe\xba\xbeShell", "红果极速.app/Contents/MacOS/hongguo-tv-core": "\xca\xfe\xba\xbeCore", "红果极速.app/Contents/Info.plist": "plist"}
 	}
 	for n, v := range files {
 		f, err := z.Create(n)
@@ -243,7 +243,7 @@ func TestDesktopZIPRejectsLegacyEnglishApplicationPath(t *testing.T) {
 		var legacy bytes.Buffer
 		writer := zip.NewWriter(&legacy)
 		for _, entry := range reader.File {
-			name := strings.ReplaceAll(entry.Name, "红果短剧", "hongguo-desktop")
+			name := strings.ReplaceAll(entry.Name, "红果极速", "hongguo-desktop")
 			out, err := writer.Create(name)
 			if err != nil {
 				t.Fatal(err)

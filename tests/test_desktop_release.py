@@ -10,11 +10,11 @@ import unittest.mock
 class DesktopReleaseTests(unittest.TestCase):
  def test_bundle_archive_roundtrips_chinese_name_and_executable_mode(self):
   with tempfile.TemporaryDirectory() as temp:
-   root=Path(temp);app=root/'红果短剧.app';exe=app/'Contents/MacOS/红果短剧'
+   root=Path(temp);app=root/'红果极速.app';exe=app/'Contents/MacOS/红果极速'
    exe.parent.mkdir(parents=True);exe.write_bytes(b'\xca\xfe\xba\xbeapp');exe.chmod(0o755)
    archive=root/'app.zip';package_desktop_app.package(app,archive)
    with zipfile.ZipFile(archive) as z:
-    info=z.getinfo('红果短剧.app/Contents/MacOS/红果短剧')
+    info=z.getinfo('红果极速.app/Contents/MacOS/红果极速')
     self.assertTrue(info.flag_bits & 0x800)
     mode=(info.external_attr >> 16) & 0o777
     # Windows normalises temporary-file mode bits; macOS packaging must keep
@@ -24,7 +24,7 @@ class DesktopReleaseTests(unittest.TestCase):
     self.assertEqual(z.read(info),exe.read_bytes())
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name);self.notes=self.root/'notes.md';self.notes.write_text('下载 ZIP 自行替换')
-  for suffix,files in [('macos-universal',{'红果短剧.app/Contents/MacOS/红果短剧':b'\xca\xfe\xba\xbeapp','红果短剧.app/Contents/MacOS/hongguo-tv-core':b'\xca\xfe\xba\xbecore','红果短剧.app/Contents/Info.plist':b'plist'}),('windows-x64',{'红果短剧.exe':b'MZapp','hongguo-tv-core.exe':b'MZcore','README.txt':b'notes'})]:
+  for suffix,files in [('macos-universal',{'红果极速.app/Contents/MacOS/红果极速':b'\xca\xfe\xba\xbeapp','红果极速.app/Contents/MacOS/hongguo-tv-core':b'\xca\xfe\xba\xbecore','红果极速.app/Contents/Info.plist':b'plist'}),('windows-x64',{'红果极速.exe':b'MZapp','hongguo-tv-core.exe':b'MZcore','README.txt':b'notes'})]:
    p=self.root/f'hongguo-desktop-0.2.59-{suffix}.zip'
    with zipfile.ZipFile(p,'w') as z:
     for n,b in files.items():z.writestr(n,b)

@@ -60,7 +60,7 @@ def publish(directory, version, source_commit, notes):
             "tag_name": tag,
             "target_commitish": "main",
             "draft": True,
-            "name": f"红果短剧 Linux AppImage 测试版 {version}",
+            "name": f"红果极速 Linux AppImage 测试版 {version}",
             "body": notes.read_text(),
             "prerelease": True,
         })

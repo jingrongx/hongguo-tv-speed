@@ -166,7 +166,7 @@ def publish(directory, notes):
         # catches up. Retain that ID for uploads and publication.
         release = api(f'repos/{REPOSITORY}/releases', payload={
             'tag_name': tag, 'target_commitish': 'main', 'draft': True,
-            'name': f'红果短剧 {tag}', 'body': notes.read_text()})
+            'name': f'红果极速 {tag}', 'body': notes.read_text()})
     if release['draft']:
         assets = {asset['name']: asset for asset in release['assets']}
         for path in files:

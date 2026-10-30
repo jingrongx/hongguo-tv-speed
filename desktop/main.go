@@ -109,7 +109,7 @@ func (a *desktopApp) beforeClose(ctx context.Context) bool {
 		labels, cancel = []string{"Yes", "No"}, "no"
 	}
 	answer, err := wruntime.MessageDialog(ctx, wruntime.MessageDialogOptions{
-		Type: wruntime.QuestionDialog, Title: "退出红果短剧", Message: "确定退出红果短剧吗？观看记录会保留。",
+		Type: wruntime.QuestionDialog, Title: "退出红果极速", Message: "确定退出红果极速吗？观看记录会保留。",
 		Buttons: labels, DefaultButton: cancel, CancelButton: cancel,
 	})
 	if err != nil || answer != "退出" && answer != "Yes" {
@@ -149,7 +149,7 @@ func desktopOptions(app *desktopApp, dataDir string) *options.App {
 	// On Linux, queue configuration before the WebView's initial navigation.
 	configureDesktopMedia()
 	return &options.App{
-		Title: "红果短剧", Width: 1280, Height: 800, MinWidth: 960, MinHeight: 540,
+		Title: "红果极速", Width: 1280, Height: 800, MinWidth: 960, MinHeight: 540,
 		BackgroundColour: options.NewRGB(12, 13, 18),
 		// No Assets filesystem: the core's embedded index is the actual page.
 		AssetServer: &assetserver.Options{Handler: http.HandlerFunc(app.core.proxy)},

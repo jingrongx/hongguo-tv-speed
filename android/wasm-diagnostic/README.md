@@ -1,6 +1,6 @@
 # HEVC WebView diagnostic APK
 
-This is a separate, temporary Android app for measuring the Android System WebView's ability to run the hongguo-player v1.2.0 HEVC WASM worker and render its frames. It has a different application ID from 红果短剧 and does not start the Go core or access account, history, playback, or update data.
+This is a separate, temporary Android app for measuring the Android System WebView's ability to run the hongguo-player v1.2.0 HEVC WASM worker and render its frames. It has a different application ID from 红果极速 and does not start the Go core or access account, history, playback, or update data.
 
 The worker and decoder module were extracted from the privately analyzed hongguo-player v1.2.0 macOS package. Keep this module and its APK in the private source repository. Do not copy the diagnostic APK or decoder assets to the public download repository. Remove the temporary private draft release after the test APK has been downloaded for device testing.
 

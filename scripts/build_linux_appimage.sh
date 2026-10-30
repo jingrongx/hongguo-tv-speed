@@ -22,7 +22,7 @@ ln -s hongguo-tv.png "$app_dir/.DirIcon"
 cat > "$app_dir/hongguo-tv.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=红果短剧
+Name=红果极速
 Exec=hongguo-tv
 Icon=hongguo-tv
 Terminal=false

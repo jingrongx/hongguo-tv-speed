@@ -53,7 +53,7 @@ jobs:
             [[ "$(gh release view "$tag" --json isDraft --jq .isDraft)" == true ]]
             [[ "$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)" == "$GITHUB_SHA" ]]
           else
-            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "红果短剧桌面版 $APP_VERSION" --notes-file docs/desktop-release.md
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "红果极速桌面版 $APP_VERSION" --notes-file docs/desktop-release.md
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -109,7 +109,7 @@ jobs:
           if [[ "${{ matrix.os }}" == windows-* ]]; then
             python3 scripts/verify_desktop_core.py desktop/build/bin/hongguo-tv-core.exe "$HONGGUO_CORE_VERSION"
           else
-            python3 scripts/verify_desktop_core.py desktop/build/bin/红果短剧.app/Contents/MacOS/hongguo-tv-core "$HONGGUO_CORE_VERSION"
+            python3 scripts/verify_desktop_core.py desktop/build/bin/红果极速.app/Contents/MacOS/hongguo-tv-core "$HONGGUO_CORE_VERSION"
           fi
       - name: Attach exact packages to private draft
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
