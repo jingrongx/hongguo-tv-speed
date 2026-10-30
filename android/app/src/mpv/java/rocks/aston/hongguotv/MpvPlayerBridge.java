@@ -69,6 +69,12 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         boolean swFallback;
         int greenProbes, greenStreak;
         Runnable probe;
+        // Decode-stall watch: sampled drop counters (decoder + VO) every five
+        // seconds. Two heavy-drop windows in a row on one decode path flip
+        // the session to the other path once — hardware that greens screens
+        // lands in software, software that cannot keep up lands in hardware.
+        long dropSampleAt, dropBase;
+        int stallStrikes;
         long position, duration;
         long loadRequestedAt, fileLoadedAt, outputReadyAt;
         String decoder = "", state = "preparing";
@@ -127,7 +133,8 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (mode == null) return;
         // An explicit choice is also the reset path: a firmware update may
         // have fixed the vendor decoder, so forget the learned codecs.
-        preferences.edit().putString("mpv_decode_mode", mode.id).remove(MpvDecodeMemory.STORAGE_KEY).apply();
+        preferences.edit().putString("mpv_decode_mode", mode.id).remove(MpvDecodeMemory.STORAGE_KEY)
+            .putBoolean("mpv_hwdec_rejected", false).putBoolean("mpv_sw_stall_upgraded", false).apply();
         decodeMemory = new MpvDecodeMemory(null);
     }
 
@@ -523,8 +530,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (target.mode == MpvDecodeMode.AUTOMATIC && !target.swFallback
                 && (kind.equals("initialization") || kind.equals("native_event")
                     || kind.equals("media") || kind.equals("output_timeout")
-                    || kind.equals("green_output"))) {
-            if (kind.equals("green_output")) learnBrokenCodec(target);
+                    || kind.equals("green_output") || kind.equals("hw_stall"))) {
+            if (kind.equals("green_output")) {
+            learnBrokenCodec(target);
+            preferences.edit().putBoolean("mpv_hwdec_rejected", true).apply();
+        }
             JSONObject detail = new JSONObject();
             try { detail.put("kind", "hwdec_fallback").put("code", code); } catch (Exception ignored) {}
             event(target, "info", detail);
@@ -548,7 +558,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             Session target = session;
             if (target != null && current(target) && target.player != null) guarded(target, () -> {
                 if (!target.outputReady) rendered(target);
-                if (target.outputReady) reportProgress(target);
+                if (target.outputReady) { reportProgress(target); checkDecodeStall(target); }
                 else updateDiagnostic(target, null);
             });
             handler.postDelayed(this, 500);
@@ -561,6 +571,65 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (duration != null && finite(duration)) target.duration = Math.max(0, Math.round(duration * 1000));
         updateDiagnostic(target, null);
         web.evaluateJavascript("window.HongguoNativePlayback&&window.HongguoNativePlayback.progress(" + JSONObject.quote(target.id) + "," + target.position + "," + target.duration + ")", null);
+    }
+
+    /** Combined decoder + output dropped frames since the file started. */
+    private long totalDrops(Session target) {
+        Double decoderDrops = target.player.getPropertyDouble("frame-drop-count");
+        Double voDrops = target.player.getPropertyDouble("vo-drop-frame-count");
+        return Math.round((decoderDrops == null ? 0 : decoderDrops) + (voDrops == null ? 0 : voDrops));
+    }
+
+    /**
+     * Steady-state decode quality watch. Two consecutive five-second windows
+     * losing more than ~6 frames per second mean the current decode path
+     * cannot keep up with this device: flip to the other path once. The
+     * green-screen probe on the hardware path (and its per-codec memory)
+     * guarantees the flip never lands on a broken picture.
+     */
+    private void checkDecodeStall(Session target) {
+        if (target.player == null || !target.outputReady || background || target.terminal) return;
+        Boolean paused = target.player.getPropertyBoolean("pause");
+        if (paused != null && paused) { target.dropSampleAt = 0; return; }
+        long now = SystemClock.uptimeMillis();
+        if (target.dropSampleAt == 0) { target.dropSampleAt = now; target.dropBase = totalDrops(target); return; }
+        if (now - target.dropSampleAt < 5000) return;
+        long delta = totalDrops(target) - target.dropBase;
+        target.dropSampleAt = now; target.dropBase = totalDrops(target);
+        if (delta < 30) { target.stallStrikes = 0; return; }
+        target.stallStrikes++;
+        if (target.stallStrikes < 2) return;
+        target.stallStrikes = 0;
+        String hwdec = target.player.getPropertyString("hwdec-current");
+        boolean hardware = hwdec != null && !hwdec.isEmpty() && !"no".equals(hwdec);
+        if (target.mode == MpvDecodeMode.AUTOMATIC && !target.swFallback && hardware) {
+            fail(target, "hw_stall");
+        } else if (target.mode == MpvDecodeMode.SOFTWARE && !target.swFallback) {
+            upgradeSoftStall(target);
+        }
+    }
+
+    /**
+     * A device stuck in software decoding (manual choice or vendor
+     * migration) that cannot keep up gets one automatic ride up to
+     * automatic mode. Devices whose hardware decoder greens screens carry
+     * the mpv_hwdec_rejected flag and stay in software.
+     */
+    private void upgradeSoftStall(Session target) {
+        if (preferences.getBoolean("mpv_hwdec_rejected", false)) return;
+        if (preferences.getBoolean("mpv_sw_stall_upgraded", false)) return;
+        preferences.edit()
+            .putBoolean("mpv_sw_stall_upgraded", true)
+            .putString("mpv_decode_mode", MpvDecodeMode.AUTOMATIC.id)
+            .apply();
+        JSONObject detail = new JSONObject();
+        try { detail.put("kind", "sw_stall_upgrade"); } catch (Exception ignored) {}
+        event(target, "info", detail);
+        dispose(target);
+        Session retry = new Session(target.generation, target.id, target.source, target.data, MpvDecodeMode.AUTOMATIC);
+        retry.wantsPlay = target.wantsPlay || target.outputReady;
+        retry.position = target.position;
+        installSession(retry);
     }
     private void updateDiagnostic(Session target, JSONObject detail) {
         try {

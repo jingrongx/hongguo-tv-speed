@@ -2,7 +2,7 @@ plugins {
     id "com.android.application"
 }
 
-def appVersion = "0.2.159"
+def appVersion = "0.2.162"
 // Same formula as the release pipeline: major*10000 + minor*100 + patch,
 // so a locally built APK always upgrades cleanly over a CI-built one.
 def computedVersionCode = appVersion.tokenize('.').withIndex().collect { part, i -> (part as int) * (i == 0 ? 10000 : i == 1 ? 100 : 1) }.sum()

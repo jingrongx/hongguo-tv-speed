@@ -4173,6 +4173,15 @@
   // play-info without touching the player, then records the verdict. The
   // viewer keeps watching the current drama while this runs.
   var orientationProbes = {};
+  // The core surfaces an empty upstream multi_video_model body as plain
+  // text ("MiniReel multi_video_model empty after N attempts"), not as a
+  // machine code — match the message, because the code field never carries
+  // a stable marker for this failure.
+  function emptySourceError(error) {
+    if (!error) return false;
+    if (error.code === 'VIDEO_MODEL_EMPTY') return true;
+    return /multi_video_model empty|video_model response is empty/i.test(String(error.message || ''));
+  }
   function probeOrientation(item) {
     var seriesId = String(item && item.series_id || '');
     if (!seriesId) return Promise.resolve(null);
@@ -4187,7 +4196,10 @@
         rememberVerticalDrama(item.series_id, vertical);
         rememberProbedDrama(item.series_id);
         return vertical;
-      }).catch(function () { return null; });
+      }).catch(function (error) {
+        if (typeof emptySourceError === 'function' && emptySourceError(error)) return 'unplayable';
+        return null;
+      });
     });
     return orientationProbes[seriesId];
   }
@@ -4205,7 +4217,7 @@
       var item = feedItems[target];
       if (isKnownVertical(item.series_id)) { target += step; hops++; attempt(); return; }
       probeOrientation(item).then(function (vertical) {
-        if (vertical) { target += step; hops++; attempt(); return; }
+        if (vertical === true || vertical === 'unplayable') { target += step; hops++; attempt(); return; }
         finish();
       });
     }
@@ -5411,20 +5423,29 @@
         // Orientation pre-check: this very play/info request both warms the
         // core's download cache (prefetch=1) and reports the video size, so
         // the vertical verdict costs nothing extra and lands before any
-        // repaint. Landscape dramas proceed untouched.
+        // repaint. Its response is reused as the formal source (one upstream
+        // play/info per drama, not two) — the upstream answers burst bursts
+        // of requests with empty 200 bodies, so fewer requests is armor.
+        var orientationInfo = null;
         var orientationCheck = Promise.resolve(false);
         if (landscapeAutoOnly && autoChain > 0 && !sameSeries) {
           var probeParams = new URLSearchParams({ series_id: item.series_id, vid: String(vid), quality: playbackPreferences.quality, prefetch: '1', sw: softDecodeFlag() });
           orientationCheck = fetchData('/api/v1/play/info?' + probeParams, request ? { signal: request.signal } : {}).then(function (info) {
+            orientationInfo = info;
             var probeWidth = Number(info.video_width) || 0, probeHeight = Number(info.video_height) || 0;
             var probeVertical = probeWidth > 0 && probeHeight > 0 && probeHeight > probeWidth;
             rememberVerticalDrama(item.series_id, probeVertical);
             rememberProbedDrama(item.series_id);
             return probeVertical;
-          }).catch(function () { return false; });
+          }).catch(function (error) {
+            // A provably empty source is as good as vertical for the viewer:
+            // skip it quietly instead of parking on a failure panel.
+            if (typeof emptySourceError === 'function' && emptySourceError(error)) return 'unplayable';
+            return false;
+          });
         }
         return orientationCheck.then(function (vertical) {
-          if (vertical && generation === feedGeneration && !request.signal.aborted) { skipVerticalFrom(autoEnterChainDirection, autoChain); return null; }
+          if ((vertical === true || vertical === 'unplayable') && generation === feedGeneration && !request.signal.aborted) { skipVerticalFrom(autoEnterChainDirection, autoChain); return null; }
         activePlayback = { item: playing, episode: episode, vid: vid, position: position, generation: generation, owner: accountEpoch, started: false, stableSince: 0, lastWrite: 0, completed: false,
           episodeCoverAllowed: keepEpisodeCover,
           preserveNativeTransition: sameSeries,
@@ -5480,6 +5501,13 @@
           // and retries a failed or timed-out speculative job through the
           // normal resolver. The 1.2s handoff budget keeps navigation responsive.
           activePlayback.timing.foreground_resolve_started_at = Date.now();
+          // The orientation probe already fetched this drama's play/info —
+          // reuse it instead of asking upstream twice (empty-body bursts).
+          if (orientationInfo && orientationInfo.path) {
+            playbackPrefetchHandoff = null;
+            activePlayback.timing.foreground_resolve_ms = Math.max(0, Date.now() - activePlayback.timing.foreground_resolve_started_at);
+            return orientationInfo;
+          }
           var params = { series_id: item.series_id, vid: vid, quality: playbackPreferences.quality, fallback: '1', mode: playbackMode, sw: softDecodeFlag() };
           return fetchData('/api/v1/play/info?' + new URLSearchParams(params), { signal: request.signal }).then(function (data) {
             playbackPrefetchHandoff = null;
@@ -5555,6 +5583,17 @@
         if (generation !== feedGeneration || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
         playbackInfoRequest = null; playbackPrefetchHandoff = null;
         if (recoverPlaybackPreparation(activePlayback, error, generation)) return;
+        // A provably empty source inside the automatic chain (cold-start
+        // resume, up/down switching) is a dead drama, not a reason to show a
+        // failure panel: hop to the next landscape drama in the travel
+        // direction. Only retries were exhausted — showNotice fires when the
+        // feed actually ends. Manual entries (detail page) keep the panel.
+        if (typeof emptySourceError === 'function' && emptySourceError(error) && activePlayback && activePlayback.autoChain > 0 &&
+            pageMode() === 'recommend' && !detailModalOpen && !confirmOpen) {
+          activePlayback.landscapeChecked = true;
+          skipVerticalFrom(activePlayback.autoDirection || 1, activePlayback.autoChain);
+          return;
+        }
         if (error.name !== 'AbortError') {
           clearRangeTransitionHint();
           hero.classList.remove('is-range-transition');
