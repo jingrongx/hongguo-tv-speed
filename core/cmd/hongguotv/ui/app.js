@@ -4786,7 +4786,11 @@
     return true;
   }
   function recoverPlaybackPreparation(playback, error, generation) {
-    if (typeof webosShell === 'undefined' || !webosShell || !playback || activePlayback !== playback ||
+    // One automatic refresh on transient preparation failures. This used to
+    // be webOS-only; on Android the same upstream hiccups (empty 200 bodies,
+    // timeouts) left the user staring at "cannot play this episode" with a
+    // manual retry button, so the refresh now applies to every TV shell.
+    if (!playback || activePlayback !== playback ||
         playback.generation !== generation || generation !== feedGeneration ||
         applicationInBackground || applicationHidden() || !isPlaybackPage() || !error || error.name === 'AbortError') return false;
     var code = error.code || '';
@@ -5489,7 +5493,15 @@
         if (generation !== feedGeneration || request.signal.aborted || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
         if (!data) return;
         playbackInfoRequest = null;
-        if (!data.path) throw new Error(uiText('content.noSource', '播放服务没有返回地址'));
+        if (!data.path) {
+          // The classic upstream hiccup: HTTP 200 with an empty body. Tag it
+          // so the recovery layer recognizes it and auto-refreshes once
+          // instead of parking the user on the failure panel.
+          var noSource = new Error(uiText('content.noSource', '播放服务没有返回地址'));
+          noSource.code = 'VIDEO_MODEL_EMPTY';
+          noSource.retryable = true;
+          throw noSource;
+        }
         // Automatic selection prefers landscape dramas. The core reports the
         // video dimensions from the parsed MP4 track header; unknown sizes
         // (full-file fallback) stay unfiltered and get a second chance on the

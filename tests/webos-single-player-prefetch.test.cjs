@@ -97,12 +97,12 @@ test('a webOS source failure refreshes once at the pending episode position, nev
   assert.equal(f.c.recoverPlaybackPreparation(f.playback, error, 5), false, 'one shared recovery budget');
 });
 
-test('preparation recovery rejects permanent errors, cancelled/stale/background work and other platforms', () => {
+test('preparation recovery rejects permanent errors, cancelled/stale/background work', () => {
   for (const error of [{ code: 'VIDEO_MODEL_HTTP', status: 403 }, { code: 'ACCOUNT_REQUIRED', status: 401 },
     { code: 'PROVIDER_ERROR', status: 400 }, { code: 'VIDEO_MODEL_EMPTY', name: 'AbortError' }]) {
     const f = recoveryFixture(); assert.equal(f.c.recoverPlaybackPreparation(f.playback, error, 5), false);
   }
-  for (const change of [{ webosShell: false }, { feedGeneration: 6 }, { applicationInBackground: true }, { activePlayback: {} }]) {
+  for (const change of [{ feedGeneration: 6 }, { applicationInBackground: true }, { activePlayback: {} }]) {
     const f = recoveryFixture(); Object.assign(f.c, change);
     assert.equal(f.c.recoverPlaybackPreparation(f.playback, { code: 'VIDEO_MODEL_EMPTY' }, 5), false); assert.equal(f.calls.length, 0);
   }
