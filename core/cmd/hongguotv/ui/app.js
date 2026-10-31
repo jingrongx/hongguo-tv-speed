@@ -2354,7 +2354,7 @@
     }
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' &&
       shell.classList.contains('is-cinema') && (direction === 'up' || direction === 'down')) {
-      if (!event.repeat) switchPlayerEpisode(direction === 'up' ? -1 : 1);
+      if (!event.repeat && !manualSwitchBlocked()) switchPlayerEpisode(direction === 'up' ? -1 : 1);
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && pageMode() === 'recommend' && zoneOf(current) === 'feed' && (direction === 'up' || direction === 'down')) {
@@ -2367,7 +2367,7 @@
     // episodes. The player page steps episodes on both axes; the immersive
     // recommendation feed steps episodes on left/right.
     if (!detailModalOpen && !playerOptionsOpen && !confirmOpen && !discussionOpen && zoneOf(current) === 'feed' && pageMode() === 'player' && (direction === 'up' || direction === 'down' || direction === 'left' || direction === 'right')) {
-      if (!event.repeat) {
+      if (!event.repeat && !manualSwitchBlocked()) {
         if (direction === 'left' || direction === 'right') switchPlayerEpisode(direction === 'left' ? -1 : 1);
         else switchRecommendation(direction === 'up' ? -1 : 1);
       }
@@ -2715,9 +2715,13 @@
     // own entry point.
     if (!goFocus(document.getElementById('hero-feed-focus'))) goFocus(firstContentFocus());
   }
+  // True while the failure panel (retry/diagnostics) is on screen. Direction
+  // keys on the playback surface must not switch dramas underneath it.
+  var playerFailureShown = false;
   function setPlayerStatus(message, failed) {
     var panel = document.getElementById('player-status');
     var hero = document.getElementById('hero');
+    playerFailureShown = !!failed;
     if (failed && autoCinemaCandidate) cancelPendingAutoCinema();
     if (failed && activePlayback && activePlayback.presentation) activePlayback.presentation.failed = true;
     var preparing = hero.classList.contains('is-preparing-video') || activePlayback && (activePlayback.continuationPending || !activePlayback.started);
@@ -4299,6 +4303,20 @@
     if (error.code === 'VIDEO_MODEL_EMPTY') return true;
     return /multi_video_model empty|video_model response is empty/i.test(String(error.message || ''));
   }
+  // The failure panel must say why: a throttled upstream, a timeout and a
+  // dead network all collapse into "cannot play" otherwise, and the viewer
+  // cannot tell whether waiting or retrying is worth it.
+  function failureReason(error) {
+    if (!error || error.name === 'AbortError') return '';
+    if (typeof emptySourceError === 'function' && emptySourceError(error)) {
+      return uiText('ui.failureThrottled', '（上游限流，稍后自动重试）');
+    }
+    if (error.code === 'UPSTREAM_TIMEOUT' || /timed? ?out/i.test(String(error.message || ''))) {
+      return uiText('ui.failureTimeout', '（连接超时，稍后自动重试）');
+    }
+    var detail = localizedError(error, '', '');
+    return detail && detail !== error.message ? '（' + detail + '）' : (error.message ? '（' + String(error.message).slice(0, 60) + '）' : '');
+  }
   function probeOrientation(item) {
     var seriesId = String(item && item.series_id || '');
     if (!seriesId) return Promise.resolve(null);
@@ -4322,8 +4340,19 @@
     });
     return orientationProbes[seriesId];
   }
+  // Manual drama/episode switching is a pure-playback gesture: it applies
+  // only once the view is back to the bare player — control dock hidden, no
+  // failure panel, no side modal. With the dock or a panel up the direction
+  // keys just move focus instead of yanking the viewer to another drama.
+  function manualSwitchBlocked() {
+    if (!shell.classList.contains('is-controls-hidden')) return true;
+    if (playerFailureShown) return true;
+    return scanModalOpen() || (typeof accountKeypadOpen === 'function' && accountKeypadOpen()) || supportModalOpen || rankFilterOpen ||
+      (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen);
+  }
   function switchRecommendation(step) {
     if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
+    if (typeof manualSwitchBlocked === 'function' && manualSwitchBlocked()) return;
     var target = feedIndex + step;
     var hops = 0;
     while (hops < 12 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) {
@@ -5214,7 +5243,7 @@
       var stall = new Error(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'));
       stall.code = 'UPSTREAM_TIMEOUT';
       if (recoverPlaybackPreparation(playback, stall, generation)) return;
-      setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'), true);
+      setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集') + (typeof failureReason === 'function' ? failureReason(stall) : ''), true);
     }, 45000);
   }
   // A shown failure panel never just sits there: up to three automatic
@@ -5416,11 +5445,11 @@
         playMedia(video).catch(function () { setPlayerStatus(uiText('ui.standardPlaybackFailed', '标准播放也未能启动'), true); });
         armPreparationWatchdog(playback);
       }
-    }).catch(function () {
+    }).catch(function (error) {
       if (playback !== activePlayback || generation !== feedGeneration) return;
       playbackInfoRequest = null;
       playback.rangeFallback = uiText('ui.allPlaybackFailed', '分段读取和标准播放准备均失败');
-      setPlayerStatus(uiText('ui.episodePlaybackFailed', '这集未能正常播放'), true);
+      setPlayerStatus(uiText('ui.episodePlaybackFailed', '这集未能正常播放') + (typeof failureReason === 'function' ? failureReason(error) : ''), true);
     });
     return true;
   }
@@ -5952,7 +5981,7 @@
           hero.classList.remove('is-range-transition');
           video.classList.remove('has-source');
           if (typeof syncNativePlaybackPageState === 'function') syncNativePlaybackPageState();
-          setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'), true);
+          setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集') + (typeof failureReason === 'function' ? failureReason(error) : ''), true);
         }
       });
   }

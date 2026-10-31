@@ -17,6 +17,8 @@ function keyboard() {
     var lastPageFocus={search:current};
     var detailModalOpen=false,playerOptionsOpen=false,confirmOpen=false,discussionOpen=false;
     var androidShell=false; function accountKeypadOpen(){return false}
+    function scanModalOpen(){return false}
+    function manualSwitchBlocked(){return false}
     function firstVisible(selector){return {id:selector.slice(1)}}
     var shellState={};
     var shell={classList:{contains:function(name){return shellState[name]===true}}};
