@@ -252,6 +252,10 @@
             rect.width / width > .93 && rect.height / height > .93) {
           var columnWidth = Math.min(rect.width, rect.height * state.videoWidth / state.videoHeight);
           var left = rect.left + (rect.width - columnWidth) / 2;
+          // The page's mask hole must match THIS rectangle exactly (same rect,
+          // same math) — a separate estimate leaves a black seam at the seam.
+          var hero = document.getElementById('hero');
+          if (hero) hero.style.setProperty('--portrait-column', (columnWidth / rect.width * 100).toFixed(3) + '%');
           bridge.bounds(left / width, rect.top / height, columnWidth / width, rect.height / height);
           return;
         }
@@ -489,6 +493,11 @@
       }
       if (name === 'playing') { state.started = true; state.paused = false; state.ended = false; state.seeking = false; state.readyState = Math.max(3, state.readyState); notifyPlaybackActive(true); dispatch('playing', detail); return; }
       if (name === 'paused') { state.paused = true; notifyPlaybackActive(false); dispatch('pause', detail); return; }
+      if (name === 'portrait_frame') {
+        // Dynamic blur-fill payload from the native surface (small JPEG).
+        dispatch('portraitframe', { type: 'portraitframe', data: detail && detail.data || '' });
+        return;
+      }
       if (name === 'auto_next') {
         // mpv advanced to the queued next episode on its own (gapless). The
         // session id is unchanged, so progress/event matching keeps working;

@@ -758,9 +758,39 @@ func registerMiniReelPlaybackDeviceAt(deviceBase string) (miniReelDevice, error)
 	return miniReelDevice{deviceID: client.session.DeviceID, installID: client.session.InstallID, cdid: device.CDID}, nil
 }
 
+// The upstream answers request bursts with empty 200 bodies and keeps
+// answering that way for a while once provoked. Two guards keep the app
+// from feeding the fire: a global minimum spacing between upstream calls
+// (parallel probes and prefetch otherwise stack into bursts), and a short
+// pause between this request's own empty-body retries.
+var (
+	miniReelUpstreamMu      sync.Mutex
+	miniReelUpstreamLastAt  time.Time
+	miniReelUpstreamSpacing = 600 * time.Millisecond
+)
+
+func miniReelUpstreamGate(ctx context.Context) error {
+	miniReelUpstreamMu.Lock()
+	wait := miniReelUpstreamSpacing - time.Since(miniReelUpstreamLastAt)
+	miniReelUpstreamLastAt = time.Now().Add(wait)
+	miniReelUpstreamMu.Unlock()
+	if wait <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(wait):
+		return nil
+	}
+}
+
 func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
 	var lastErr error
 	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
+		if err := miniReelUpstreamGate(ctx); err != nil {
+			return nil, err
+		}
 		options, err := miniReelNativeOptionsAttempt(ctx, vid, endpoint, device)
 		if err == nil {
 			return options, nil
@@ -771,6 +801,12 @@ func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint 
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		// A back-to-back retry into a throttling edge only deepens it.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(600 * time.Millisecond):
 		}
 	}
 	return nil, fmt.Errorf("MiniReel multi_video_model empty after %d attempts: %w", miniReelVideoModelAttempts, lastErr)

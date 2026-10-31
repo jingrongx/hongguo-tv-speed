@@ -155,10 +155,13 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
    the native surface behind the page shows through there. */
 .hero.is-feed.is-portrait-video .hero-backdrop {
   visibility: visible; opacity: 1;
-  filter: blur(30px) brightness(.42) saturate(1.2);
+  filter: blur(22px) brightness(.58) saturate(1.25);
   transform: scale(1.22);
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc((100% - var(--portrait-column, 32%)) / 2 - 1px), transparent calc((100% - var(--portrait-column, 32%)) / 2), transparent calc((100% + var(--portrait-column, 32%)) / 2), #000 calc((100% + var(--portrait-column, 32%)) / 2 + 1px), #000 100%);
-  mask-image: linear-gradient(90deg, #000 0, #000 calc((100% - var(--portrait-column, 32%)) / 2 - 1px), transparent calc((100% - var(--portrait-column, 32%)) / 2), transparent calc((100% + var(--portrait-column, 32%)) / 2), #000 calc((100% + var(--portrait-column, 32%)) / 2 + 1px), #000 100%);
+  /* The blur panels reach 24px INTO the video column: any alignment gap or
+     the player's own letterbox bars hide behind them instead of showing as
+     black stripes. The video loses only a hair of its outer edge. */
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc((100% - var(--portrait-column, 32%)) / 2 + 6px), transparent calc((100% - var(--portrait-column, 32%)) / 2 + 46px), transparent calc((100% + var(--portrait-column, 32%)) / 2 - 46px), #000 calc((100% + var(--portrait-column, 32%)) / 2 - 6px), #000 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc((100% - var(--portrait-column, 32%)) / 2 + 6px), transparent calc((100% - var(--portrait-column, 32%)) / 2 + 46px), transparent calc((100% + var(--portrait-column, 32%)) / 2 - 46px), #000 calc((100% + var(--portrait-column, 32%)) / 2 - 6px), #000 100%);
 }
 .hero.is-preparing-video .hero-backdrop, .hero.is-preparing-video .hero-loading-poster { visibility: visible; }
 .hero.is-preparing-video.is-episode-transition.is-range-transition .hero-backdrop, .hero.is-preparing-video.is-episode-transition.is-range-transition .hero-loading-poster { visibility: hidden; }

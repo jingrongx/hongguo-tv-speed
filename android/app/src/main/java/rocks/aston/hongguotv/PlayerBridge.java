@@ -53,6 +53,7 @@ final class PlayerBridge implements NativePlayerAdapter {
     private final SurfaceView surface;
     private final View renderView;
     private volatile String diagnostic="{}";
+    private volatile boolean probeInFlight;
     private JSONObject diagnosticFields=new JSONObject();
     private ExoPlayer player;
     private boolean playerCompatibility, playerPcmAudio, playerLive, playerForceSoftwareHevc;
@@ -64,6 +65,31 @@ final class PlayerBridge implements NativePlayerAdapter {
     private boolean requestedMuted = true;
     private float left, top, width, height;
     private int videoWidth, videoHeight;
+    // Portrait blur-fill: stream small JPEG frames of the playing surface to
+    // the page so its side backdrop is the video's own moving picture.
+    private boolean portraitCapture;
+    private android.graphics.Bitmap portraitBitmap;
+    private final Runnable portraitCaptureRun = new Runnable(){public void run(){
+        if(destroyed||!portraitCapture||player==null||session==null)return;
+        if(probeInFlight){handler.postDelayed(portraitCaptureRun,700);return;}
+        try{
+            probeInFlight=true;
+            if(portraitBitmap==null)portraitBitmap=android.graphics.Bitmap.createBitmap(135,240,android.graphics.Bitmap.Config.ARGB_8888);
+            android.view.PixelCopy.request(surface,portraitBitmap,result->{
+                probeInFlight=false;
+                if(!portraitCapture||destroyed)return;
+                if(result==android.view.PixelCopy.SUCCESS&&session!=null){
+                    try{
+                        java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+                        portraitBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,55,bytes);
+                        String data="data:image/jpeg;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP);
+                        send(session.id,"portrait_frame",new JSONObject().put("data",data));
+                    }catch(Exception ignored){}
+                }
+                handler.postDelayed(portraitCaptureRun,700);
+            },handler);
+        }catch(Exception ignored){probeInFlight=false;handler.postDelayed(portraitCaptureRun,700);}
+    }};
     private float pixelRatio = 1;
     private Runnable timeout;
     private final Runnable progress=new Runnable(){public void run(){
@@ -292,7 +318,12 @@ final class PlayerBridge implements NativePlayerAdapter {
                     retrySoftwareHevc(current);
                 }
             }
-            @Override public void onVideoSizeChanged(VideoSize size){if(current()){videoWidth=size.width;videoHeight=size.height;pixelRatio=size.pixelWidthHeightRatio;fit();}}
+            @Override public void onVideoSizeChanged(VideoSize size){
+                if(current()){videoWidth=size.width;videoHeight=size.height;pixelRatio=size.pixelWidthHeightRatio;fit();
+                    boolean portrait=size.height>size.width;
+                    if(portrait&&!portraitCapture&&Build.VERSION.SDK_INT>=26){portraitCapture=true;handler.postDelayed(portraitCaptureRun,350);}
+                    else if(!portrait&&portraitCapture)stopPortraitCapture();
+                }}
             @Override public void onRenderedFirstFrame(){
                 Session current=session;if(!current())return;current.firstFrame=true;clearTimeout();
                 JSONObject frame = new JSONObject();
@@ -537,7 +568,8 @@ final class PlayerBridge implements NativePlayerAdapter {
             || (target.generation+"#next").equals(mediaId);
     }
     private void clearTimeout(){if(timeout!=null){handler.removeCallbacks(timeout);timeout=null;}}
-    private void releasePlayer(){clearTimeout();ExoPlayer old=player;player=null;playerHeaders=Collections.emptyMap();playerCompatibility=false;playerPcmAudio=false;playerLive=false;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}
+    private void stopPortraitCapture(){portraitCapture=false;if(portraitBitmap!=null){portraitBitmap.recycle();portraitBitmap=null;}}
+    private void releasePlayer(){clearTimeout();stopPortraitCapture();ExoPlayer old=player;player=null;playerHeaders=Collections.emptyMap();playerCompatibility=false;playerPcmAudio=false;playerLive=false;if(old!=null){old.setVolume(0);if(surface!=null)old.clearVideoSurfaceView(surface);else old.clearVideoTextureView(texture);old.release();}}
     public void onPause(){background=true;clearTimeout();if(session!=null)session.clock.reset();if(player!=null)player.pause();markInactive();}
     public void onResume(){background=false;if(session!=null&&player!=null&&session.wantsPlay){
         if(!preferences.edit().putBoolean("playback_active",Build.VERSION.SDK_INT<=23&&!session.live).commit()){fail(session,"settings",0);return;}

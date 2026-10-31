@@ -88,6 +88,11 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         boolean eofHeld;
         // Bounded recovery for an eof replace whose source never loads.
         Runnable replaceTimeout;
+        // Portrait blur-fill: a small captured frame of this surface is
+        // streamed to the page every ~700ms so the side backdrop is the
+        // video's own moving picture, blurred by CSS.
+        boolean portraitCapture;
+        android.graphics.Bitmap portraitBitmap;
         // Set synchronously on the JS bridge thread (where queueNext runs)
         // so a second timeupdate cannot double-append before the posted
         // command lands on the UI thread.
@@ -472,6 +477,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
                                 target.queuedId = null; target.queuedSource = null; target.queuedData = null;
                                 target.queuedReplacing = false;
                                 target.eofHeld = false;
+                                stopPortraitCapture(target);
                                 if (target.replaceTimeout != null) { handler.removeCallbacks(target.replaceTimeout); target.replaceTimeout = null; }
                                 // Re-arm the per-file state machine: readiness,
                                 // green probe and stall watch all restart for
@@ -551,6 +557,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
             target.outputReadyAt = SystemClock.uptimeMillis();
             handler.removeCallbacks(target.timeout);
             armGreenProbe(target);
+            if (w > 0 && h > w) startPortraitCapture(target);
             JSONObject detail = new JSONObject();
             try { detail.put("width", w).put("height", h); } catch (Exception ignored) {}
             // The shared adapter's frame event means presentation-ready here.
@@ -585,6 +592,43 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     }
     private void cancelProbe(Session target) {
         if (target.probe != null) { handler.removeCallbacks(target.probe); target.probe = null; }
+    }
+    /** Portrait blur-fill: stream a small JPEG of the playing surface to the page. */
+    private void startPortraitCapture(Session target) {
+        if (!greenProbeSupported()) return;
+        target.portraitCapture = true;
+        handler.postDelayed(() -> runPortraitCapture(target), 350);
+    }
+    private void stopPortraitCapture(Session target) {
+        target.portraitCapture = false;
+        if (target.portraitBitmap != null) { target.portraitBitmap.recycle(); target.portraitBitmap = null; }
+    }
+    private void runPortraitCapture(Session target) {
+        if (!target.portraitCapture || !current(target) || background || target.player == null) return;
+        if (probeInFlight) { handler.postDelayed(() -> runPortraitCapture(target), 700); return; }
+        try {
+            probeInFlight = true;
+            // Portrait orientation matching the video column: a landscape
+            // bitmap would squeeze the frame and the side blur would never
+            // visibly change.
+            if (target.portraitBitmap == null) target.portraitBitmap = Bitmap.createBitmap(135, 240, Bitmap.Config.ARGB_8888);
+            android.view.PixelCopy.request(surface, target.portraitBitmap, result -> {
+                probeInFlight = false;
+                if (!target.portraitCapture || !current(target)) return;
+                if (result == android.view.PixelCopy.SUCCESS) {
+                    try {
+                        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                        target.portraitBitmap.compress(Bitmap.CompressFormat.JPEG, 55, bytes);
+                        JSONObject frame = new JSONObject().put("data", "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP));
+                        send(target.id, "portrait_frame", frame);
+                    } catch (Exception ignored) {}
+                }
+                handler.postDelayed(() -> runPortraitCapture(target), 700);
+            }, handler);
+        } catch (RuntimeException ignored) {
+            probeInFlight = false;
+            handler.postDelayed(() -> runPortraitCapture(target), 700);
+        }
     }
     private void releaseProbeBitmap() {
         if (probeBitmap != null) { probeBitmap.recycle(); probeBitmap = null; }
@@ -969,6 +1013,7 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
     private void dispose(Session target) {
         if (target.timeout != null) handler.removeCallbacks(target.timeout);
         if (target.replaceTimeout != null) handler.removeCallbacks(target.replaceTimeout);
+        stopPortraitCapture(target);
         cancelProbe(target);
         MPVLib old = target.player; target.player = null;
         if (old != null) {

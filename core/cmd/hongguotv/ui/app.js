@@ -4194,6 +4194,10 @@
   function jumpToLandscape(startTarget, dir, chain, epoch) {
     var target = startTarget;
     var hops = 0;
+    // Bounded hunt: if the feed is full of unknown dramas and probing takes
+    // too long, start the current candidate anyway (with the landscape gate
+    // relaxed for that attempt) instead of hunting forever.
+    var deadline = Date.now() + 9000;
     function exhausted() {
       showNotice(uiText(dir < 0 ? 'ui.landscapeNoPrev' : 'ui.landscapeNoNext',
         dir < 0 ? '上面暂时没有横屏剧' : '后面暂时没有更多横屏剧'));
@@ -4204,7 +4208,7 @@
       setPlayerStatus('');
       revealControls();
     }
-    function finish() {
+    function finish(relaxed) {
       if (feedGeneration !== epoch) return;
       if (hops > 0) {
         showNotice(uiText('ui.landscapeSkipped', '竖屏剧已跳过，自动播放横屏剧'));
@@ -4212,7 +4216,7 @@
       }
       autoEnterChain = chain + 1;
       autoEnterChainDirection = dir;
-      playFeedItem(target);
+      playFeedItem(target, undefined, undefined, null, null, relaxed ? { skipLandscapeGate: true } : null);
     }
     function attempt() {
       if (feedGeneration !== epoch) return;
@@ -4220,6 +4224,7 @@
       // instantly, a recorded landscape plays immediately.
       while (hops < 12 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) { target += dir; hops++; }
       if (target < 0 || target >= feedItems.length || hops >= 12) { exhausted(); return; }
+      if (Date.now() > deadline) { finish(true); return; }
       if (orientationDatabaseVerdict(feedItems[target].series_id) === 'landscape') { finish(); return; }
       // Unknown candidates are measured in parallel (up to three at once) —
       // a run of verticals costs one round trip, not one per drama.
@@ -5218,8 +5223,7 @@
   var failureAutoRetryDelays = [10000, 25000, 50000, 90000, 90000, 90000];
   function scheduleFailureAutoRetry() {
     cancelFailureAutoRetry();
-    if (applicationInBackground || applicationHidden() || !isPlaybackPage()) return;
-    if (failureAutoRetryCount >= failureAutoRetryDelays.length || !playbackRequest) return;
+    if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
     failureAutoRetryTimer = setTimeout(function () {
       failureAutoRetryTimer = 0;
       if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
@@ -5743,7 +5747,7 @@
         // of requests with empty 200 bodies, so fewer requests is armor.
         var orientationInfo = null;
         var orientationCheck = Promise.resolve(false);
-        if (landscapeAutoOnly && autoChain > 0 && !sameSeries) {
+        if (landscapeAutoOnly && autoChain > 0 && !sameSeries && !(recovery && recovery.skipLandscapeGate)) {
           var verdict = orientationDatabaseVerdict(item.series_id);
           if (verdict === 'landscape') {
             // The shared database already measured this drama: no probe, no
@@ -5882,7 +5886,7 @@
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
           rememberVerticalDrama(activePlayback.item.series_id, verticalAutoDrama());
           if (landscapeAutoOnly && activePlayback.autoChain > 0 && !activePlayback.landscapeChecked && pageMode() === 'recommend' &&
-              !detailModalOpen && !confirmOpen && verticalAutoDrama()) {
+              !detailModalOpen && !confirmOpen && !(recovery && recovery.skipLandscapeGate) && verticalAutoDrama()) {
             activePlayback.landscapeChecked = true;
             if (skipVerticalAutoDrama()) return;
           }
@@ -8762,13 +8766,8 @@
     var hero = document.getElementById('hero');
     if (!hero) return;
     var changed = hero.classList.toggle('is-portrait-video', portrait);
-    if (portrait) {
-      // Width of the video column relative to the screen, for the backdrop
-      // side panels to leave open.
-      var screenRatio = (window.innerWidth || 1) / (window.innerHeight || 1);
-      var column = Math.min(100, width / height / screenRatio * 100);
-      hero.style.setProperty('--portrait-column', column.toFixed(2) + '%');
-    }
+    // The column width variable itself is owned by the native adapter's
+    // syncBounds — same rect, same math as the surface, no seam.
     if (changed && typeof syncNativePlayerBounds === 'function') syncNativePlayerBounds();
   }
   media.addEventListener('loadedmetadata', function () {
@@ -8871,6 +8870,15 @@
   media.addEventListener('emptied', function () {
     document.getElementById('hero').classList.remove('is-portrait-video');
     updatePlaybackControls();
+  });
+  media.addEventListener('portraitframe', function (event) {
+    var data = event && event.detail && event.detail.data;
+    if (!data || !document.getElementById('hero').classList.contains('is-portrait-video')) return;
+    var backdrop = document.getElementById('hero-backdrop');
+    if (backdrop && backdrop.__portraitFrame !== data) {
+      backdrop.__portraitFrame = data;
+      backdrop.style.backgroundImage = 'url("' + data + '")';
+    }
   });
   media.addEventListener('waiting', function () {
     if (!activePlayback) return;
