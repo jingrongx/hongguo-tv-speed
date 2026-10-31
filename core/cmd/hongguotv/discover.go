@@ -20,6 +20,11 @@ const (
 	discoverPageSize     = 15
 	discoverRefillTarget = 45
 	discoverLowWater     = 10
+	// Bounds the upstream shelf walks inside a single serve request: the
+	// landscape filter can leave a page with no keeper at all, and without a
+	// cap the loop would keep pulling pages until the shelves ran dry within
+	// one HTTP request.
+	discoverServeRefillCap = 8
 )
 
 type discoverSession struct {
@@ -35,6 +40,7 @@ type discoverSession struct {
 	refills           int
 	aiIndex           int
 	aiExhausted       bool
+	landscapeOnly     bool
 }
 
 type discoverFeed struct {
@@ -105,7 +111,7 @@ func (sess *discoverSession) currentShelf() map[string]string {
 	return discoverFallbackShelves[sess.refills%len(discoverFallbackShelves)]
 }
 
-func (sess *discoverSession) refill(ctx context.Context, client *hongguoClient) {
+func (sess *discoverSession) refill(ctx context.Context, client *hongguoClient, db *orientationDatabase) {
 	if sess.categoryExhausted {
 		return
 	}
@@ -135,6 +141,27 @@ func (sess *discoverSession) refill(ctx context.Context, client *hongguoClient) 
 		fresh = append(fresh, drama)
 	}
 	rand.Shuffle(len(fresh), func(i, j int) { fresh[i], fresh[j] = fresh[j], fresh[i] })
+	if db != nil && sess.landscapeOnly {
+		// The landscape preference shapes the pool server-side. The AI
+		// shelves are the landscape home, so only dramas measured as vertical
+		// are dropped there; the general shelves are presumed vertical, and
+		// only dramas the shared database has measured as landscape may pass —
+		// unknowns would hand the probing cost straight back to the skip
+		// path, which is what made switching dramas feel endless.
+		kept := fresh[:0]
+		for _, drama := range fresh {
+			verdict := db.verdict(drama.SeriesID)
+			if sess.aiExhausted {
+				if verdict != "h" {
+					continue
+				}
+			} else if verdict == "v" {
+				continue
+			}
+			kept = append(kept, drama)
+		}
+		fresh = kept
+	}
 	sess.pool = append(sess.pool, fresh...)
 	sess.categoryOffset = list.NextOffset
 	sess.categorySessionID = list.SessionID
@@ -170,9 +197,11 @@ func (s *server) discoverServe(ctx context.Context, sess *discoverSession, shown
 		shownSet[id] = true
 	}
 	items := make([]Drama, 0, limit)
+	usedRefills := 0
 	for len(items) < limit {
-		if len(sess.pool) < discoverLowWater && !sess.categoryExhausted {
-			sess.refill(ctx, client)
+		if len(sess.pool) < discoverLowWater && !sess.categoryExhausted && usedRefills < discoverServeRefillCap {
+			sess.refill(ctx, client, s.orientationDB)
+			usedRefills++
 		}
 		if len(sess.pool) == 0 {
 			break
@@ -198,6 +227,9 @@ func (s *server) discoverFeedHandler(ctx context.Context, q url.Values) (ListRes
 		sessionID = randomDiscoverSessionID()
 	}
 	sess := s.discover.session(sessionID)
+	// The landscape-only preference travels with every page request so a
+	// settings toggle takes effect without abandoning the session.
+	sess.landscapeOnly = q.Get("landscape") == "1"
 	shown := splitQueryList(q.Get("shown"))
 	items, remaining := s.discoverServe(ctx, sess, shown, discoverPageSize)
 	out := ListResult{CategoryResult: CategoryResult{

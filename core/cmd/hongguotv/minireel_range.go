@@ -114,8 +114,13 @@ func prepareMiniReelRangeMedia(ctx context.Context, job *miniReelMediaJob, token
 	job.Quality = option.Quality
 	job.Qualities = miniReelQualities(options)
 	job.Mode = "range"
-	job.VideoWidth = firstPositive(option.Width, source.VideoWidth)
-	job.VideoHeight = firstPositive(option.Height, source.VideoHeight)
+	// The parsed track header is the ground truth for the video shape: the
+	// upstream option metadata mixes the pixel size with quality-tier labels
+	// (a 720P vertical drama reports 720x720 — "720" there is the quality
+	// name, not the pixel height), and reading it first made every such
+	// drama look landscape.
+	job.VideoWidth = firstPositive(source.VideoWidth, option.Width)
+	job.VideoHeight = firstPositive(source.VideoHeight, option.Height)
 	// The prepared source only holds the MP4 index; the first media chunk is
 	// still upstream. Warming the read-ahead slot now (connection setup, CDN
 	// edge, DNS) removes that latency from the episode switch itself, and the
@@ -206,6 +211,13 @@ func mp4VideoTrackSize(prefix []byte) (int, int) {
 		width := int(binaryBigEndianUint32(prefix[tkhd.End-8 : tkhd.End-4]) >> 16)
 		height := int(binaryBigEndianUint32(prefix[tkhd.End-4 : tkhd.End]) >> 16)
 		if width > 0 && height > 0 {
+			// A 90° display rotation lives in the tkhd matrix — the b element
+			// (±1.0 in 16.16 fixed point) sits right before the transform row.
+			// Such a track is encoded sideways but shows vertical.
+			rotation := int32(binaryBigEndianUint32(prefix[tkhd.End-40 : tkhd.End-36]))
+			if rotation == 65536 || rotation == -65536 {
+				width, height = height, width
+			}
 			return width, height
 		}
 	}

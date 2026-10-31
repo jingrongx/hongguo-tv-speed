@@ -103,6 +103,17 @@ func (db *orientationDatabase) merge(payload orientationPayload) int {
 	return merged
 }
 
+// verdict reports a series' stored orientation: "h", "v" or "" when unknown.
+func (db *orientationDatabase) verdict(id string) string {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	record, ok := db.records[id]
+	if !ok {
+		return ""
+	}
+	return record.O
+}
+
 func (db *orientationDatabase) snapshot() orientationPayload {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -236,31 +247,61 @@ func crawlOrientations(ctx context.Context, client *hongguoClient, options orien
 
 	// A mix of shelves keeps the pool growing from both the hot lists and
 	// the newest arrivals instead of re-walking the same head every day.
+	// The AI shelves lead and are walked from their own heads: the playback
+	// feed serves exactly these shelves first, so covering their early pages
+	// is what makes the install-side skip instant.
 	shelves := []map[string]string{
 		{"sort": "hot_score", "genre": "ai_series"},
 		{"sort": "online_time", "genre": "ai_series"},
+		{"sort": "hot_collect", "genre": "ai_series"},
 		{"sort": "hot_score", "genre": "comic_series"},
 		{"sort": "hot_score"},
 		{"sort": "hot_score", "online_time": "days_7"},
 	}
 	type candidate struct{ id, title string }
+	type shelfCursor struct {
+		spec      map[string]string
+		offset    int
+		sessionID string
+		exhausted bool
+	}
+	cursors := make([]shelfCursor, len(shelves))
+	for i, spec := range shelves {
+		cursors[i] = shelfCursor{spec: spec}
+	}
 	var pending []candidate
 	seen := map[string]bool{}
 	for id := range result.Series {
 		seen[id] = true
 	}
-	offset := 0
+	next := 0
 	for page := 0; page < options.MaxPages && len(pending) < options.MaxNew; page++ {
-		shelf := shelves[page%len(shelves)]
-		request := CategoryRequest{Offset: offset, Filters: map[string]string{"sort": shelf["sort"]}, Shown: nil}
-		if value := shelf["online_time"]; value != "" {
+		// Round-robin the shelves that still have pages, each from its own
+		// cursor. One shared offset used to sample every shelf at a different
+		// depth, which scattered coverage away from the heads the feed shows.
+		var cursor *shelfCursor
+		for scan := 0; scan < len(cursors); scan++ {
+			if candidate := &cursors[(next+scan)%len(cursors)]; !candidate.exhausted {
+				cursor = candidate
+				next = (next + scan + 1) % len(cursors)
+				break
+			}
+		}
+		if cursor == nil {
+			break
+		}
+		request := CategoryRequest{Offset: cursor.offset, SessionID: cursor.sessionID, Shown: nil, Filters: map[string]string{"sort": cursor.spec["sort"]}}
+		if value := cursor.spec["online_time"]; value != "" {
 			request.Filters["online_time"] = value
+		}
+		if value := cursor.spec["genre"]; value != "" {
+			request.Filters["genre"] = value
 		}
 		pageCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		list, err := client.Category(pageCtx, request)
 		cancel()
 		if err != nil {
-			return result, fmt.Errorf("枚举分类失败（offset %d）: %w", offset, err)
+			return result, fmt.Errorf("枚举分类失败（%v offset %d）: %w", cursor.spec, cursor.offset, err)
 		}
 		added := 0
 		for _, drama := range list.Items {
@@ -274,13 +315,11 @@ func crawlOrientations(ctx context.Context, client *hongguoClient, options orien
 				break
 			}
 		}
-		log.Printf("[orientation-crawl] page %d (%v): %d 条，新增待测 %d", page, shelf, len(list.Items), added)
-		if !list.HasMore || len(list.Items) == 0 {
-			break
-		}
-		offset = list.NextOffset
-		if offset <= 0 {
-			break
+		log.Printf("[orientation-crawl] page %d (%v): %d 条，新增待测 %d", page, cursor.spec, len(list.Items), added)
+		cursor.offset = list.NextOffset
+		cursor.sessionID = list.SessionID
+		if !list.HasMore || len(list.Items) == 0 || list.NextOffset <= 0 {
+			cursor.exhausted = true
 		}
 	}
 

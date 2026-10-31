@@ -550,7 +550,11 @@
   }
   function createListPager(endpoint, container, selector, id, render, metadata, prefetchPages) {
     var pager = HongguoPagination.create({
-      request: function (params, signal) { var requestParams = Object.assign({}, params); if (endpoint === '/api/v1/follow') delete requestParams.shown; return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(requestParams).toString(), signal ? { signal: signal } : {}); },
+      request: function (params, signal) { var requestParams = Object.assign({}, params); if (endpoint === '/api/v1/follow') delete requestParams.shown;
+        // The landscape preference steers the pool server-side: the general
+        // (vertical-heavy) shelves only serve viewers who opted out.
+        if (endpoint === '/api/v1/lists/recommend' && landscapeAutoOnly) requestParams.landscape = '1';
+        return fetchData((pager.endpoint || endpoint) + '?' + new URLSearchParams(requestParams).toString(), signal ? { signal: signal } : {}); },
       clear: function () { if (container) renderMessage(container, 'list-empty', uiText('common.loading', '正在加载…')); },
       render: function (items, append, p) {
         if (items.length && container) container.querySelectorAll('.list-empty, .calendar-empty, .search-result-empty, .rank-empty').forEach(function (node) { node.remove(); });
@@ -4246,7 +4250,11 @@
         if (feedGeneration !== epoch) return;
         for (var i = 0; i < results.length; i++) {
           hops++;
-          if (results[i].verdict === true || results[i].verdict === 'unplayable') continue;
+          // A null verdict (probe timed out or upstream throttled) carries no
+          // information: playing it is how vertical dramas slipped through
+          // whenever the upstream was busy. Keep hunting instead — the
+          // deadline fallback below still bounds the wait.
+          if (results[i].verdict === true || results[i].verdict === 'unplayable' || results[i].verdict == null) continue;
           target = results[i].target;
           finish();
           return;
@@ -4263,7 +4271,7 @@
   // probe (both vertical and landscape). Keeps the pre-check to one round
   // trip per drama for the lifetime of the install.
   function knownProbedDramas() {
-    try { return JSON.parse(window.localStorage.getItem('hongguo.probedSeries') || '[]'); }
+    try { return JSON.parse(window.localStorage.getItem('hongguo.probedSeries.v2') || '[]'); }
     catch (error) { return []; }
   }
   function orientationKnown(seriesId) {
@@ -4275,7 +4283,7 @@
       var list = knownProbedDramas().filter(function (id) { return id !== String(seriesId); });
       list.push(String(seriesId));
       if (list.length > 400) list = list.slice(-400);
-      window.localStorage.setItem('hongguo.probedSeries', JSON.stringify(list));
+      window.localStorage.setItem('hongguo.probedSeries.v2', JSON.stringify(list));
     } catch (error) { /* best effort */ }
   }
   // Silent orientation probe: resolves the first episode's dimensions from
@@ -5443,9 +5451,11 @@
   }
   // Local memory of dramas whose video dimensions were parsed as vertical.
   // First-screen autoplay and drama switching skip them up front, instead of
-  // waiting for the first frame to find out. Capped and best effort.
+  // waiting for the first frame to find out. Capped and best effort. The key
+  // is versioned: verdicts recorded before the dimension fix are poisoned
+  // (every probed drama read as landscape) and must never be trusted again.
   function knownVerticalDramas() {
-    try { return JSON.parse(window.localStorage.getItem('hongguo.verticalSeries') || '[]'); }
+    try { return JSON.parse(window.localStorage.getItem('hongguo.verticalSeries.v2') || '[]'); }
     catch (error) { return []; }
   }
   function isKnownVertical(seriesId) {
@@ -5458,10 +5468,10 @@
     try {
       var list = knownVerticalDramas().filter(function (id) { return id !== String(seriesId); });
       if (vertical) { list.push(String(seriesId)); if (list.length > 300) list = list.slice(-300); }
-      window.localStorage.setItem('hongguo.verticalSeries', JSON.stringify(list));
+      window.localStorage.setItem('hongguo.verticalSeries.v2', JSON.stringify(list));
       // Full local verdict table: once measured, a drama is known vertical
       // AND landscape across sessions — no re-probing either way.
-      var map = JSON.parse(window.localStorage.getItem('hongguo.orientation.local') || '{}');
+      var map = JSON.parse(window.localStorage.getItem('hongguo.orientation.local.v2') || '{}');
       map[String(seriesId)] = verdict;
       var ids = Object.keys(map);
       if (ids.length > 3000) {
@@ -5469,7 +5479,7 @@
         ids.slice(-3000).forEach(function (id) { trimmed[id] = map[id]; });
         map = trimmed;
       }
-      window.localStorage.setItem('hongguo.orientation.local', JSON.stringify(map));
+      window.localStorage.setItem('hongguo.orientation.local.v2', JSON.stringify(map));
       orientationDatabase[String(seriesId)] = { o: verdict };
     } catch (error) { /* Private-mode storage: the memory is best effort. */ }
   }
@@ -5973,7 +5983,7 @@
     if (!feedItems.length) {
       featuredItem = null;
       updateSeasonControl(null);
-      showRecommendationPlaceholder(feedPager.hasMore() ? uiText('ui.readingRecommendations', '正在读取推荐') : uiText('ui.noRecommendations', '暂时没有推荐内容'));
+      showRecommendationPlaceholder(feedPager.hasMore() ? uiText('ui.readingRecommendations', '正在读取推荐') : uiText(landscapeAutoOnly ? 'ui.landscapeFeedExhausted' : 'ui.noRecommendations', landscapeAutoOnly ? '横屏剧暂时刷完了' : '暂时没有推荐内容'));
       return;
     }
     armPlaybackMenuHint();
@@ -9368,10 +9378,15 @@
     // waits for it and falls back to live probing when it is not there yet.
     // The locally measured verdicts apply immediately, before any fetch.
     try {
-      var localVerdicts = JSON.parse(window.localStorage.getItem('hongguo.orientation.local') || '{}');
+      // v2 keys only: the pre-fix local verdicts were recorded from broken
+      // dimension metadata and read every probed drama as landscape.
+      var localVerdicts = JSON.parse(window.localStorage.getItem('hongguo.orientation.local.v2') || '{}');
       var merged = { series: {} };
       Object.keys(localVerdicts).forEach(function (id) { merged.series[id] = { o: localVerdicts[id] }; });
       applyOrientationDatabase(merged);
+      window.localStorage.removeItem('hongguo.orientation.local');
+      window.localStorage.removeItem('hongguo.verticalSeries');
+      window.localStorage.removeItem('hongguo.probedSeries');
     } catch (error) { /* Private-mode storage: probes keep working without it. */ }
     fetchOrientationDatabase();
     if (!initialHomeProgram || !window.HongguoTV.openHomeProgram(initialHomeProgram)) loadCatalog(uiText('nav.recommend', '推荐'));
