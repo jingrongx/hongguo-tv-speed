@@ -170,6 +170,68 @@ func TestDiscoverFeedShownFilterIsHonored(t *testing.T) {
 	}
 }
 
+// The landscape preference filters the pool server-side: dramas measured as
+// vertical never leave the AI shelves, and the general shelves only pass
+// dramas the shared database has measured as landscape. Draining both runs
+// keeps the assertions independent of the per-session shuffle.
+func TestDiscoverFeedLandscapeFilter(t *testing.T) {
+	vertical := strconv.Itoa(7700000000000000001)
+	landscape := strconv.Itoa(7700000000000000002)
+	db := &orientationDatabase{records: map[string]orientationRecord{
+		vertical:  {O: "v", W: 720, H: 1280},
+		landscape: {O: "h", W: 1280, H: 720},
+	}}
+	drain := func(query url.Values) []string {
+		s, _ := newDiscoverTestServer(t)
+		s.orientationDB = db
+		var ids []string
+		for call := 0; call < 40; call++ {
+			out, err := s.discoverFeedHandler(context.Background(), query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, drama := range out.Items {
+				ids = append(ids, drama.SeriesID)
+			}
+			if !out.HasMore {
+				break
+			}
+		}
+		return ids
+	}
+	landscapeFeed := drain(url.Values{"session_id": {"land-test"}, "landscape": {"1"}})
+	unfiltered := drain(url.Values{"session_id": {"open-test"}})
+	if len(landscapeFeed) == 0 {
+		t.Fatal("landscape feed served nothing")
+	}
+	if len(unfiltered) == 0 {
+		t.Fatal("unfiltered feed served nothing")
+	}
+	for _, id := range landscapeFeed {
+		if id == vertical {
+			t.Fatal("landscape feed served a drama measured as vertical")
+		}
+	}
+	seenVertical := false
+	for _, id := range unfiltered {
+		if id == vertical {
+			seenVertical = true
+		}
+	}
+	if !seenVertical {
+		t.Fatal("unfiltered feed never served the vertical drama")
+	}
+	seenLandscape := false
+	for _, id := range landscapeFeed {
+		if id == landscape {
+			seenLandscape = true
+		}
+	}
+	if !seenLandscape {
+		t.Fatal("landscape feed never served the measured landscape drama")
+	}
+}
+
 func TestOrientationPayloadParseAndMerge(t *testing.T) {
 	base := parseOrientationPayload([]byte(`{"version":1,"updated":"2026-01-01T00:00:00Z","series":{
 		"111":{"o":"v","w":720,"h":1280,"t":1},
