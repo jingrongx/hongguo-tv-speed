@@ -846,7 +846,11 @@ func registerMiniReelPlaybackDeviceAt(deviceBase string) (miniReelDevice, error)
 var (
 	miniReelUpstreamMu      sync.Mutex
 	miniReelUpstreamLastAt  time.Time
-	miniReelUpstreamSpacing = 600 * time.Millisecond
+	// Bursts of video-model requests are themselves a bot signal: parallel
+	// jobs and retries used to land six requests inside 2.5 seconds. A
+	// global three-second floor spreads even concurrent resolvers out to a
+	// human-ish cadence.
+	miniReelUpstreamSpacing = 3 * time.Second
 )
 
 func miniReelUpstreamGate(ctx context.Context) error {
