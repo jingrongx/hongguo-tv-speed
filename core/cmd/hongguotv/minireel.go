@@ -745,9 +745,14 @@ func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([
 // edge and renew the cooldown window forever. A global cooling gate makes
 // those loops cheap no-ops until the window passes.
 var (
-	miniReelThrottleMu       sync.Mutex
-	miniReelThrottledUntil   time.Time
-	miniReelThrottleCooldown = 90 * time.Second
+	miniReelThrottleMu     sync.Mutex
+	miniReelThrottledUntil time.Time
+	// Repeated empty rounds mean a longer reputation penalty than one
+	// cooldown can cover. Each failed round backs off another 90s up to a
+	// five-minute ceiling, so an hour-long penalty costs one probe per five
+	// minutes instead of one per ninety seconds.
+	miniReelThrottleBase   = 90 * time.Second
+	miniReelThrottleStreak int
 )
 
 func miniReelThrottleRemaining() time.Duration {
@@ -758,12 +763,18 @@ func miniReelThrottleRemaining() time.Duration {
 
 func miniReelMarkThrottled() {
 	miniReelThrottleMu.Lock()
-	miniReelThrottledUntil = time.Now().Add(miniReelThrottleCooldown)
+	miniReelThrottleStreak++
+	cooldown := miniReelThrottleBase * time.Duration(miniReelThrottleStreak)
+	if cooldown > 5*time.Minute {
+		cooldown = 5 * time.Minute
+	}
+	miniReelThrottledUntil = time.Now().Add(cooldown)
 	miniReelThrottleMu.Unlock()
 }
 
 func miniReelClearThrottle() {
 	miniReelThrottleMu.Lock()
+	miniReelThrottleStreak = 0
 	miniReelThrottledUntil = time.Time{}
 	miniReelThrottleMu.Unlock()
 }
