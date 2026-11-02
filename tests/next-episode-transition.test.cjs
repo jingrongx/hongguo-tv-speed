@@ -181,7 +181,7 @@ test('webOS automatic handoffs consume the real coordinator on every episode usi
   f.gate.resolve();
   for (let episode = 1; episode < 5; episode++) {
     f.video.paused = false; f.video.ended = false; f.video.currentTime = 6;
-    f.c.activePlayback.started = true; f.c.activePlayback.stableSince = Date.now() - 6000;
+    f.c.activePlayback.started = true; f.c.activePlayback.stableSince = Date.now() - 76000;
     f.handlers.timeupdate(); await tick();
     const before = f.resolverURLs.length;
     f.video.currentTime = 120; f.video.ended = true;

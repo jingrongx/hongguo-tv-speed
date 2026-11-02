@@ -10,7 +10,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture(options = {}) {
   const calls = [], detail = options.detail || { series_id: '123', vid_list: ['111', '222', '333', '444', '555'] };
-  const playback = options.playback || { item: { series_id: '123' }, episode: 1, vid: '111', generation: 1, started: true, stableSince: Date.now() - 6000 };
+  const playback = options.playback || { item: { series_id: '123' }, episode: 1, vid: '111', generation: 1, started: true, stableSince: Date.now() - 76000 };
   const video = { currentTime: 6, duration: 60, paused: false, ended: false };
   const c = vm.createContext({ Promise, AbortController, URLSearchParams, Date, Number, Math, Object,
     HongguoEpisodePrefetch: prefetch, webosShell: true,
@@ -39,7 +39,7 @@ test('webOS consumes prefetch results over four consecutive episode handoffs wit
     assert.equal(data.path, '/minireel-proxy/media/' + (episode + 1) * 111 + '.mp4');
     assert.equal(f.video.paused, false, 'network prefetch cannot pause the current video');
     f.c.feedGeneration++;
-    f.c.activePlayback = { ...old, episode: episode + 1, vid: String((episode + 1) * 111), generation: f.c.feedGeneration, stableSince: Date.now() - 6000 };
+    f.c.activePlayback = { ...old, episode: episode + 1, vid: String((episode + 1) * 111), generation: f.c.feedGeneration, stableSince: Date.now() - 76000 };
   }
   const rangeCalls = f.calls.filter(call => new URLSearchParams(call.url.split('?')[1]).get('full') !== '1');
   const fullCalls = f.calls.filter(call => new URLSearchParams(call.url.split('?')[1]).get('full') === '1');
@@ -54,7 +54,7 @@ test('aggregate access count does not suppress prefetch for the immediate fourth
       { video_id: '111', locked: false }, { video_id: '222', locked: false }, { video_id: '333', locked: false },
       { video_id: '444', locked: true, locked_inferred: true }
     ] },
-    playback: { item: { series_id: '123' }, episode: 3, vid: '333', generation: 1, started: true, stableSince: Date.now() - 6000 }
+    playback: { item: { series_id: '123' }, episode: 3, vid: '333', generation: 1, started: true, stableSince: Date.now() - 76000 }
   });
   f.c.maybePrefetchNextEpisode(f.video); await tick();
   assert.equal(f.calls.length, 2);

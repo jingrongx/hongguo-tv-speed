@@ -793,6 +793,10 @@ func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint 
 		options, err := miniReelNativeOptionsAttemptPolicy(ctx, vid, endpoint, device, nil, attempt)
 		if err == nil {
 			miniReelClearThrottle()
+			// Successes were invisible in diagnostics while every failure
+			// logged; without this line the resolve-interval pattern could
+			// not be measured from device logs.
+			log.Printf("[minireel] multi_video_model ok vid=%s attempt=%d", vid, attempt+1)
 			return options, nil
 		}
 		lastErr = err

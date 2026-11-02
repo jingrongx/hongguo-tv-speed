@@ -11,7 +11,10 @@
     var isRetryableError = options.isRetryableError || retryableError;
     function stableThreshold(info) {
       var value = Number(info && info.prefetch_after_seconds);
-      return isFinite(value) && value >= 0 ? value : 5;
+      // Default to most of a short episode: an early prefetch request lands
+      // inside the upstream's per-device resolve-interval window and wastes
+      // the retry budget against it.
+      return isFinite(value) && value >= 0 ? value : 75;
     }
     function cancel() {
       var previous = entry; entry = null;

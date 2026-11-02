@@ -401,12 +401,15 @@
   // Bounded, memory-only diagnostics. No drama IDs, titles or account data.
   window.HongguoTVPlaybackTiming = { snapshot: function () { return playbackTiming.map(function (item) { return Object.assign({}, item); }); } };
   var episodePrefetch = HongguoEpisodePrefetch.create({
-    // A failed speculative request gets two more tries; without them a single
+    // A failed speculative request gets a few more tries; without them a single
     // hiccup forced the next episode switch into a full foreground resolve,
     // which is the multi-second stall. The near-end refresh below also runs on
     // every engine now: an old prepared source can outlive its upstream URL.
-    maxRetries: 2,
-    retryDelayMs: 3000,
+    // Retries follow the server's throttle-gate cadence: the first retry
+    // lands after the 90s cooldown gate has passed, and four attempts span
+    // about six minutes so a longer penalty window still gets probed.
+    maxRetries: 4,
+    retryDelayMs: 90000,
     maxAgeMs: 120000,
     lookup: function (info, signal) {
       return getDetail(info.item, signal).then(function (detail) {
@@ -5013,10 +5016,13 @@
     episodePrefetch.maybe({ item: playback.item, series_id: playback.item.series_id, vid: playback.vid,
       episode: playback.episode, quality: playbackPreferences.quality, generation: playback.generation, owner: accountEpoch,
       mode: (typeof rangePlaybackEnabled === 'function' && rangePlaybackEnabled()) ? 'range' : '',
-      // Two stable seconds is enough for WebView playback to settle; waiting
-      // five left manual switches and very short episodes without any
-      // prepared source.
-      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 1 : 2,
+      // The upstream risk engine rejects a second video-model request from
+      // the same device within roughly a minute of the previous one, so
+      // prefetching one second into the episode burned the whole retry
+      // budget against that window and left the switch without a source.
+      // Waiting out most of a short episode puts the prefetch request
+      // minutes away from the current episode's resolve.
+      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 75 : 75,
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
