@@ -405,11 +405,13 @@
     // hiccup forced the next episode switch into a full foreground resolve,
     // which is the multi-second stall. The near-end refresh below also runs on
     // every engine now: an old prepared source can outlive its upstream URL.
-    // Retries follow the server's throttle-gate cadence: the first retry
-    // lands after the 90s cooldown gate has passed, and four attempts span
-    // about six minutes so a longer penalty window still gets probed.
-    maxRetries: 4,
-    retryDelayMs: 90000,
+    // Retries ride the server's throttle gate: attempts inside the cooldown
+    // return instantly without touching the upstream, so a short 30s cadence
+    // costs nothing and catches the first moment the window reopens. Eight
+    // attempts span four minutes — more than a short episode's remaining
+    // runtime, so the next episode is usually ready before the switch.
+    maxRetries: 8,
+    retryDelayMs: 30000,
     maxAgeMs: 120000,
     lookup: function (info, signal) {
       return getDetail(info.item, signal).then(function (detail) {
