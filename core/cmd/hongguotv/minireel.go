@@ -739,14 +739,49 @@ func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([
 	return miniReelNativeOptionsEndpointWithDevice(ctx, vid, endpoint, device)
 }
 
+// The throttle is IP-scoped upstream, not per-video: after one resolver ends
+// with empty 200 responses, every retry loop in the UI (failure auto-retry,
+// episode prefetch, next-episode switching) would otherwise keep hitting the
+// edge and renew the cooldown window forever. A global cooling gate makes
+// those loops cheap no-ops until the window passes.
+var (
+	miniReelThrottleMu       sync.Mutex
+	miniReelThrottledUntil   time.Time
+	miniReelThrottleCooldown = 90 * time.Second
+)
+
+func miniReelThrottleRemaining() time.Duration {
+	miniReelThrottleMu.Lock()
+	defer miniReelThrottleMu.Unlock()
+	return time.Until(miniReelThrottledUntil)
+}
+
+func miniReelMarkThrottled() {
+	miniReelThrottleMu.Lock()
+	miniReelThrottledUntil = time.Now().Add(miniReelThrottleCooldown)
+	miniReelThrottleMu.Unlock()
+}
+
+func miniReelClearThrottle() {
+	miniReelThrottleMu.Lock()
+	miniReelThrottledUntil = time.Time{}
+	miniReelThrottleMu.Unlock()
+}
+
+var errMiniReelThrottled = errors.New("上游限流冷却中，稍后自动重试")
+
 func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
 	var lastErr error
 	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
+		if remaining := miniReelThrottleRemaining(); remaining > 0 {
+			return nil, fmt.Errorf("%w（约 %d 秒）", errMiniReelThrottled, int(remaining.Seconds())+1)
+		}
 		if err := miniReelUpstreamGate(ctx); err != nil {
 			return nil, err
 		}
 		options, err := miniReelNativeOptionsAttemptPolicy(ctx, vid, endpoint, device, nil, attempt)
 		if err == nil {
+			miniReelClearThrottle()
 			return options, nil
 		}
 		lastErr = err
@@ -763,6 +798,9 @@ func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint 
 		case <-time.After(600 * time.Millisecond):
 		}
 	}
+	// Every attempt came back empty: open the global cooling gate so the
+	// UI-level retry loops stop feeding the edge for a while.
+	miniReelMarkThrottled()
 	return nil, fmt.Errorf("MiniReel multi_video_model empty after %d attempts: %w", miniReelVideoModelAttempts, lastErr)
 }
 

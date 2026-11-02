@@ -4301,7 +4301,7 @@
   function emptySourceError(error) {
     if (!error) return false;
     if (error.code === 'VIDEO_MODEL_EMPTY') return true;
-    return /multi_video_model empty|video_model response is empty/i.test(String(error.message || ''));
+    return /multi_video_model empty|video_model response is empty|上游限流冷却中/i.test(String(error.message || ''));
   }
   // The failure panel must say why: a throttled upstream, a timeout and a
   // dead network all collapse into "cannot play" otherwise, and the viewer
@@ -4309,6 +4309,11 @@
   function failureReason(error) {
     if (!error || error.name === 'AbortError') return '';
     if (typeof emptySourceError === 'function' && emptySourceError(error)) {
+      // Surface the server-provided cooldown seconds when present.
+      var waitMatch = /约\s*(\d+)\s*秒/.exec(String(error.message || ''));
+      if (waitMatch) {
+        return uiText('ui.failureThrottledWait', '（上游限流，约 {seconds} 秒后自动重试）').replace('{seconds}', waitMatch[1]);
+      }
       return uiText('ui.failureThrottled', '（上游限流，稍后自动重试）');
     }
     if (error.code === 'UPSTREAM_TIMEOUT' || /timed? ?out/i.test(String(error.message || ''))) {
@@ -5261,13 +5266,18 @@
   function scheduleFailureAutoRetry() {
     cancelFailureAutoRetry();
     if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
+    var delay = failureAutoRetryDelays[Math.min(failureAutoRetryCount, failureAutoRetryDelays.length - 1)];
     failureAutoRetryTimer = setTimeout(function () {
       failureAutoRetryTimer = 0;
       if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
       failureAutoRetryCount++;
-      showNotice(uiText('ui.failureAutoRetry', '正在自动重试播放…'));
+      showNotice(uiText('ui.failureAutoRetry', '正在自动重试播放…') + '（第 ' + failureAutoRetryCount + ' 次）');
       playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position);
-    }, failureAutoRetryDelays[Math.min(failureAutoRetryCount, failureAutoRetryDelays.length - 1)]);
+    }, delay);
+    // Tell the viewer when the next automatic attempt fires so waiting
+    // through an upstream throttle window looks intentional, not frozen.
+    var waitSeconds = Math.round(delay / 1000);
+    setPlayerStatus(uiText('ui.failureAutoRetryWait', '上游繁忙，约 {seconds} 秒后自动重试').replace('{seconds}', String(waitSeconds)), true);
   }
   function finishPlaybackPreparation(playback) {
     var hero = document.getElementById('hero');
