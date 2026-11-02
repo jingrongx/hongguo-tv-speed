@@ -739,6 +739,33 @@ func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([
 	return miniReelNativeOptionsEndpointWithDevice(ctx, vid, endpoint, device)
 }
 
+func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
+	var lastErr error
+	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
+		if err := miniReelUpstreamGate(ctx); err != nil {
+			return nil, err
+		}
+		options, err := miniReelNativeOptionsAttemptPolicy(ctx, vid, endpoint, device, nil, attempt)
+		if err == nil {
+			return options, nil
+		}
+		lastErr = err
+		if !errors.Is(err, errMiniReelVideoModelEmpty) {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// A back-to-back retry into a throttling edge only deepens it.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(600 * time.Millisecond):
+		}
+	}
+	return nil, fmt.Errorf("MiniReel multi_video_model empty after %d attempts: %w", miniReelVideoModelAttempts, lastErr)
+}
+
 func registerMiniReelPlaybackDevice() (miniReelDevice, error) {
 	return registerMiniReelPlaybackDeviceAt(passportDeviceAPI)
 }
@@ -785,38 +812,22 @@ func miniReelUpstreamGate(ctx context.Context) error {
 	}
 }
 
-func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
-	var lastErr error
-	for attempt := 0; attempt < miniReelVideoModelAttempts; attempt++ {
-		if err := miniReelUpstreamGate(ctx); err != nil {
-			return nil, err
-		}
-		options, err := miniReelNativeOptionsAttempt(ctx, vid, endpoint, device)
-		if err == nil {
-			return options, nil
-		}
-		lastErr = err
-		if !errors.Is(err, errMiniReelVideoModelEmpty) {
-			return nil, err
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		// A back-to-back retry into a throttling edge only deepens it.
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(600 * time.Millisecond):
-		}
-	}
-	return nil, fmt.Errorf("MiniReel multi_video_model empty after %d attempts: %w", miniReelVideoModelAttempts, lastErr)
-}
-
 func miniReelNativeOptionsAttempt(ctx context.Context, vid, endpoint string, device miniReelDevice) ([]miniReelOption, error) {
 	return miniReelNativeOptionsAttemptWithClient(ctx, vid, endpoint, device, nil)
 }
 
 func miniReelNativeOptionsAttemptWithClient(ctx context.Context, vid, endpoint string, device miniReelDevice, client *http.Client) ([]miniReelOption, error) {
+	return miniReelNativeOptionsAttemptPolicy(ctx, vid, endpoint, device, client, 0)
+}
+
+// miniReelNativeOptionsAttemptPolicy renders one upstream attempt. The attempt
+// index drives the signing policy from miniReelPlaybackAttemptPolicy: signed
+// primary, signed alternate endpoint on a fresh connection, then the original
+// unsigned request for compatibility. Requests stay anonymous on purpose: the
+// passport-registered account identity is rejected by the playback risk engine
+// even when signed, while the signed anonymous path is accepted.
+func miniReelNativeOptionsAttemptPolicy(ctx context.Context, vid, endpoint string, device miniReelDevice, client *http.Client, attempt int) ([]miniReelOption, error) {
+	requestEndpoint, signed := miniReelPlaybackAttemptPolicy(endpoint, attempt)
 	stamp := time.Now().UnixMilli()
 	params := url.Values{
 		"_rticket": {strconv.FormatInt(stamp, 10)}, "ac": {"wifi"}, "aid": {"8662"}, "app_name": {"novelread"},
@@ -828,21 +839,50 @@ func miniReelNativeOptionsAttemptWithClient(ctx context.Context, vid, endpoint s
 		"player_so_load": {"1"}, "pv_player": {"71332"}, "ssmix": {"a"}, "update_version_code": {"71332"}, "version_code": {"71332"},
 		"version_name": {"7.1.3.32"}, "compliance_status": {"0"},
 	}
-	query := params.Encode()
 	bodyBytes, _ := json.Marshal(map[string]any{
 		"biz_param":          map[string]any{"detail_page_version": 0, "device_level": 3, "disable_digg_stat": false, "need_all_video_definition": true, "need_mp4_align": false, "use_os_player": false, "use_server_dns": false, "video_platform": 1024},
 		"mixed_video_id_map": map[string][]string{"1004": {vid}},
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?"+query, bytes.NewReader(bodyBytes))
+	query := params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestEndpoint+"?"+query, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
+	}
+	if signed {
+		signedQuery, headers, signErr := miniReelSignPlaybackRequest(params, bodyBytes, stamp, device.deviceID)
+		if signErr != nil {
+			return nil, errors.New("MiniReel playback request signing failed")
+		}
+		req.URL.RawQuery = signedQuery
+		req.Header = headers
+	} else {
+		req.Header = make(http.Header)
 	}
 	req.Header.Set("User-Agent", miniReelPlaybackUA)
 	req.Header.Set("Accept", "application/json; charset=utf-8,application/x-protobuf")
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	req.Close = attempt > 0
 	apiClient := miniReelNoRedirectClient(client, 35*time.Second)
+	if attempt > 0 {
+		// A fresh connection keeps a throttled keep-alive session from
+		// poisoning the alternate-endpoint and compatibility retries.
+		transport := apiClient.Transport
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		if transport, ok := transport.(*http.Transport); ok {
+			fresh := transport.Clone()
+			fresh.DisableKeepAlives = true
+			apiClient.Transport = fresh
+		}
+	}
 	resp, err := apiClient.Do(req)
 	if err != nil {
+		var requestError *url.Error
+		if errors.As(err, &requestError) {
+			// A url.Error message embeds the signed URL and device identifiers.
+			return nil, fmt.Errorf("MiniReel playback transport failed: %w", requestError.Err)
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()

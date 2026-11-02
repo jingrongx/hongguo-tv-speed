@@ -137,11 +137,6 @@ func TestMiniReelMultiVideoModelUsesRegisteredIdentityAndDirectModel(t *testing.
 		if r.Method != http.MethodPost || r.Header.Get("User-Agent") != miniReelPlaybackUA {
 			t.Errorf("unexpected playback request method/UA: %s %q", r.Method, r.Header.Get("User-Agent"))
 		}
-		for _, header := range []string{"X-Medusa", "X-Gorgon", "X-Helios", "X-Khronos"} {
-			if r.Header.Get(header) != "" {
-				t.Errorf("playback request unexpectedly signed with %s", header)
-			}
-		}
 		if got := r.URL.Query().Get("device_id"); got != device.deviceID {
 			t.Errorf("device_id = %q", got)
 		}
@@ -164,6 +159,13 @@ func TestMiniReelMultiVideoModelUsesRegisteredIdentityAndDirectModel(t *testing.
 		requestNumber := requests
 		identities = append(identities, r.URL.Query().Get("device_id"), r.URL.Query().Get("iid"))
 		mu.Unlock()
+		if requestNumber < 3 {
+			if r.Header.Get("X-Medusa") == "" {
+				t.Error("first two requests must be signed")
+			}
+		} else if r.Header.Get("X-Medusa") != "" || r.Header.Get("X-Gorgon") != "" {
+			t.Error("last empty-response retry must preserve the unsigned compatibility path")
+		}
 		if requestNumber < 3 {
 			return
 		}
@@ -320,3 +322,4 @@ func TestMiniReelLiveRegisteredPlaybackSource(t *testing.T) {
 	}
 	t.Logf("live playback verified: quality=%q range_bytes=%d init_bytes=%d indexed_samples=%d first_sample_bytes=%d", options[0].Quality, source.Length, len(source.Prefix), len(source.Samples), len(frame))
 }
+
