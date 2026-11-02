@@ -239,7 +239,11 @@ func crawlOrientations(ctx context.Context, client *hongguoClient, options orien
 	// behavior that makes bursty TV playback stall. Two workers with a
 	// per-item pause keep the crawl under that threshold.
 	if options.Concurrency <= 0 {
-		options.Concurrency = 2
+		// Serial by default: the crawler shares the playback resolver with
+		// real viewers on the same egress IP, and bursts re-trigger the
+		// empty-200 throttle for everyone. One at a time with generous gaps
+		// still measures a day's new dramas in minutes.
+		options.Concurrency = 1
 	}
 	if options.Timeout <= 0 {
 		options.Timeout = 60 * time.Second
@@ -330,7 +334,12 @@ func crawlOrientations(ctx context.Context, client *hongguoClient, options orien
 
 	work := make(chan candidate)
 	var workMu sync.Mutex
-	const maxThrottleStrikes = 8
+	// Three empty responses in a row means the egress IP is inside a throttle
+	// window; stop before the extra requests deepen it or spill onto viewers
+	// sharing the same IP.
+	const maxThrottleStrikes = 3
+	// Cooldown waited out after each empty response before the next drama.
+	const throttleBackoff = 45 * time.Second
 	consecutiveThrottled := 0
 	throttleAborted := false
 	workers := options.Concurrency
@@ -369,21 +378,31 @@ func crawlOrientations(ctx context.Context, client *hongguoClient, options orien
 				if aborted {
 					continue
 				}
-				// Pace each item and watch for a sustained throttle: the
-				// upstream answers bursts with empty 200 bodies, and hammering
-				// a burned IP only makes it worse. Give up for this run after
-				// repeated empty responses — the next scheduled run continues
-				// where the committed file left off.
-				if strikes >= maxThrottleStrikes {
-					workMu.Lock()
-					throttleAborted = true
-					workMu.Unlock()
-					continue
-				}
+			// Pace each item and watch for a sustained throttle: the
+			// upstream answers bursts with empty 200 bodies, and hammering
+			// a burned IP only makes it worse. After each empty response,
+			// wait out a cooldown before the next drama; give up for this
+			// run after repeated empty responses — the next scheduled run
+			// continues where the committed file left off.
+			if strikes >= maxThrottleStrikes {
+				workMu.Lock()
+				throttleAborted = true
+				workMu.Unlock()
+				continue
+			}
+			if strikes > 0 {
+				// Inside an active throttle window: sit it out quietly
+				// instead of feeding the edge more requests.
+				log.Printf("[orientation-crawl] 检测到限流，等待 %s 冷却后继续", throttleBackoff)
 				select {
 				case <-ctx.Done():
-				case <-time.After(time.Duration(800+rand.Intn(1200)) * time.Millisecond):
+				case <-time.After(throttleBackoff):
 				}
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(time.Duration(2500+rand.Intn(1500)) * time.Millisecond):
+			}
 				record, err := measure(item)
 				workMu.Lock()
 				if err != nil {

@@ -13,7 +13,7 @@ on:
     inputs:
       max_new:
         description: Maximum new dramas measured this run
-        default: "400"
+        default: "150"
       max_pages:
         description: Maximum category pages enumerated this run
         default: "60"
@@ -50,7 +50,7 @@ jobs:
           BEFORE=$(python3 -c "import json;print(len(json.load(open('$OUT'))['series']))" 2>/dev/null || echo 0)
           go run ./core/cmd/hongguotv -crawl-orientation \
             -crawl-out "$OUT" \
-            -crawl-max "${{ github.event.inputs.max_new || '400' }}" \
+            -crawl-max "${{ github.event.inputs.max_new || '150' }}" \
             -crawl-pages "${{ github.event.inputs.max_pages || '60' }}"
           AFTER=$(python3 -c "import json;print(len(json.load(open('$OUT'))['series']))" 2>/dev/null || echo 0)
           echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
