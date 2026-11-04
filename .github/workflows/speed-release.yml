@@ -4,6 +4,11 @@ name: Release APK
 # release + update manifests); tag pushes v* release that exact version.
 on:
   workflow_dispatch:
+    inputs:
+      bridge:
+        description: "衔接发版：按旧设备校验器发布（旧文件名 + min_sdk 23），供 0.2.169 及更早版本自动升级一次"
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -21,6 +26,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       code: ${{ steps.meta.outputs.code }}
       tag: ${{ steps.meta.outputs.tag }}
+      bridge: ${{ github.event.inputs.bridge == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,6 +79,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       CODE: ${{ needs.version.outputs.code }}
       TAG: ${{ needs.version.outputs.tag }}
+      BRIDGE: ${{ needs.version.outputs.bridge }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -248,9 +255,18 @@ jobs:
           # under two names so downloads match the device at hand.
           cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-phone-speed-mpv-$VERSION.apk"
           cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
-          python3 - "$VERSION" "$CODE" <<'PY'
+          if [ "$BRIDGE" = "true" ]; then
+            # Bridge release for installs of 0.2.169 and earlier: their built-in
+            # validator only accepts the old asset name and a manifest that
+            # declares min_sdk >= 23. The APK inside carries the new validator,
+            # so the NEXT regular release reaches them again.
+            MANIFEST_MIN_SDK=23
+          else
+            MANIFEST_MIN_SDK=21
+          fi
+          python3 - "$VERSION" "$CODE" "$MANIFEST_MIN_SDK" <<'PY'
           import hashlib, io, json, sys
-          version, code = sys.argv[1], int(sys.argv[2])
+          version, code, min_sdk = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
           with io.open('stage/release_notes.md', encoding='utf-8') as handle:
               notes = handle.read().strip()
           base = 'https://github.com/jingrongx/hongguo-tv-speed/releases/download/v' + version + '/'
@@ -264,7 +280,7 @@ jobs:
               manifest = {
                   'schema': 1,
                   'version_code': code,
-                  'min_sdk': 21,
+                  'min_sdk': min_sdk,
                   'version_name': version,
                   'package_name': package,
                   'size': len(blob),
@@ -292,9 +308,15 @@ jobs:
           {
             cat stage/release_notes.md
             echo
-            echo "**电视 MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk"
-            echo "**手机 MPV 版**（与电视 MPV 版相同安装包）：hongguo-phone-speed-mpv-$VERSION.apk"
-            echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
+            if [ "$BRIDGE" = "true" ]; then
+              echo "**衔接版本**：老版本（≤0.2.169）会通过每小时自动检查收到本版；装上本版后，后续新版本即可恢复正常自动更新。"
+              echo "**MPV 版**：hongguo-tv-speed-mpv-$VERSION.apk"
+              echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
+            else
+              echo "**电视 MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk"
+              echo "**手机 MPV 版**（与电视 MPV 版相同安装包）：hongguo-phone-speed-mpv-$VERSION.apk"
+              echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
+            fi
           } > stage/release_body.md
           # gh release create also creates the tag at this commit when the
           # tag does not exist yet (branch-push auto releases).
