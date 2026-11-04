@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 370,
+  "version_code": 371,
   "min_sdk": 21,
-  "version_name": "0.2.170",
+  "version_name": "0.2.171",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63316016,
-  "sha256": "7690ad343144c6fbf1faa069ba094763c52e6f178f88a35e8f3fbe51e5cc8f4d",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.170/hongguo-phone-speed-mpv-0.2.170.apk",
-  "release_notes": "- ci: 每次提交 main 自动发布正式版（补丁号自增，跳过清单机器人提交）",
+  "size": 63316131,
+  "sha256": "ac4855138fff8e78c630cfa4fdc635d03bf0989c71fa85d9dbf46923b7ad974c",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.171/hongguo-tv-speed-mpv-0.2.171.apk",
+  "release_notes": "- fix(playback): 每次解析轮换匿名设备身份；发版产物分电视/手机 MPV 与标准版三种命名",
   "variant": "mpv"
 }
