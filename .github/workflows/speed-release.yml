@@ -1,8 +1,12 @@
 name: Release APK
 
+# Every push to main releases a new patch version automatically (tag + GitHub
+# release + update manifests); tag pushes v* release that exact version.
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -10,18 +14,68 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
-    concurrency:
-      group: hongguo-speed-release
-      cancel-in-progress: false
+    outputs:
+      skip: ${{ steps.meta.outputs.skip }}
+      version: ${{ steps.meta.outputs.version }}
+      code: ${{ steps.meta.outputs.code }}
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Manual re-runs resolve the version from the latest tag, so the
-          # full history including tags must be present.
           fetch-depth: 0
+
+      - name: Derive version
+        id: meta
+        run: |
+          set -e
+          # A manifest commit from this very workflow must not trigger
+          # another build/release cycle.
+          if git log -1 --format=%s | grep -q '^ci: update manifests'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Manifest-only commit: skipping."
+            exit 0
+          fi
+          case "$GITHUB_REF_NAME" in
+            v*)
+              # Tag push: release exactly the tagged version.
+              VERSION="${GITHUB_REF_NAME#v}"
+              ;;
+            *)
+              # Branch push: auto-release the next patch version so every
+              # commit ships. versionCode (base*10000 + minor*100 + patch)
+              # therefore increases with every commit and phones auto-update.
+              BASE=$(git describe --tags --abbrev=0 | sed 's/^v//')
+              MAJOR=$(echo "$BASE" | awk -F. '{print $1}')
+              MINOR=$(echo "$BASE" | awk -F. '{print $2}')
+              PATCH=$(echo "$BASE" | awk -F. '{print $3}')
+              VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+              ;;
+          esac
+          TAG="v$VERSION"
+          CODE=$(echo "$VERSION" | awk -F. '{print $1*10000 + $2*100 + $3}')
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION, code $CODE, tag $TAG"
+
+  release:
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: hongguo-speed-release
+      cancel-in-progress: false
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      CODE: ${{ needs.version.outputs.code }}
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -57,26 +111,7 @@ jobs:
           done
           exit 1
 
-      - name: Derive version and codes from the tag
-        id: ver
-        run: |
-          set -e
-          case "$GITHUB_REF_NAME" in
-            v*) V="${GITHUB_REF_NAME#v}" ;;
-            *) # Manual dispatch runs on a branch: fall back to the latest tag
-               # so a release body/assets can be refreshed without re-tagging.
-               V=$(git describe --tags --abbrev=0 | sed 's/^v//') ;;
-          esac
-          CODE=$(echo "$V" | awk -F. '{print $1*10000 + $2*100 + $3}')
-          echo "VERSION=$V" >> "$GITHUB_ENV"
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "Version $V, code $CODE"
-
-      - name: Pin build.gradle to the tag version
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
-          CODE: ${{ steps.ver.outputs.code }}
+      - name: Pin build.gradle to the build version
         run: |
           set -e
           test -n "$VERSION" && test -n "$CODE"
@@ -118,9 +153,9 @@ jobs:
       - name: Run UI regression suite
         run: node --test tests/*.test.cjs
 
-      - name: Build Go cores (three ABIs)
+      - name: Build Go cores (three ABIs, Android 5.0+)
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -e
           NDK_BIN="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -128,7 +163,7 @@ jobs:
           build() {
             GOOS=android GOARCH=$2 CGO_ENABLED=1 \
             CC="$NDK_BIN/$3" \
-            go build -trimpath -buildmode=pie -ldflags "-s -w -X main.version=$VERSION-dev" \
+            go build -trimpath -buildmode=pie -ldflags "-s -w -X main.version=$VERSION" \
             -o "$OUT/$1/libhongguotv.so" ./core/cmd/hongguotv
           }
           build arm64-v8a   arm64 aarch64-linux-android21-clang
@@ -190,29 +225,23 @@ jobs:
           "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/mpv/release/app-mpv-release.apk | head -2
 
       - name: Extract release notes
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -e
-          test -n "$VERSION"
           mkdir -p stage
           python3 scripts/extract_release_notes.py "$VERSION" stage/release_notes.md
           # Fallback: summarize the commits since the previous tag so the
           # notes always describe what actually shipped in this build.
           if [ ! -s stage/release_notes.md ]; then
             PREV=$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || true)
-            if [ -n "$PREV" ]; then RANGE="$PREV..v$VERSION"; else RANGE="v$VERSION"; fi
+            if [ -n "$PREV" ]; then RANGE="$PREV..HEAD"; else RANGE="HEAD"; fi
             git log --format='- %s' "$RANGE" | grep -v 'ci: update manifests' > stage/release_notes.md || true
             [ -s stage/release_notes.md ] || echo '- 稳定性修复与体验优化。' > stage/release_notes.md
           fi
 
       - name: Stage speed-edition assets and manifests
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
-          CODE: ${{ steps.ver.outputs.code }}
         run: |
           set -e
-          test -n "$VERSION" && test -n "$CODE"
+          test -n "$VERSION" && test -n "$CODE" && test -n "$TAG"
           mkdir -p stage
           cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-phone-speed-mpv-$VERSION.apk"
           cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-phone-speed-$VERSION.apk"
@@ -254,7 +283,6 @@ jobs:
 
       - name: Create release and upload assets
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
@@ -264,16 +292,15 @@ jobs:
             echo "**MPV 版**（推荐）：hongguo-phone-speed-mpv-$VERSION.apk"
             echo "**标准版**：hongguo-phone-speed-$VERSION.apk"
           } > stage/release_body.md
-          gh release create "v$VERSION" --title "红果极速 TV v$VERSION" \
-            --notes-file stage/release_body.md --draft=false --prerelease=false \
-            || gh release upload "v$VERSION" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
-          gh release upload "v$VERSION" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+          # gh release create also creates the tag at this commit when the
+          # tag does not exist yet (branch-push auto releases).
+          gh release create "$TAG" --title "红果极速 v$VERSION"             --notes-file stage/release_body.md --draft=false --prerelease=false             || gh release upload "$TAG" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+          gh release upload "$TAG" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
           # Re-runs must refresh a stale body, not only the assets.
-          gh release edit "v$VERSION" --notes-file stage/release_body.md
+          gh release edit "$TAG" --notes-file stage/release_body.md
 
       - name: Publish update manifests to main
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
@@ -288,11 +315,11 @@ jobs:
           git commit -m "ci: update manifests for v$VERSION"
           git push origin main
           # Point the release tag at the commit that carries the manifests.
-          git tag -f "v$VERSION"
-          git push -f origin "v$VERSION"
+          git tag -f "$TAG"
+          git push -f origin "$TAG"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apks-${{ steps.ver.outputs.version }}
+          name: apks-${{ needs.version.outputs.version }}
           path: stage/*.apk
           retention-days: 14
