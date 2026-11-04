@@ -44,6 +44,11 @@ jobs:
             echo "Manifest-only commit: skipping."
             exit 0
           fi
+          # A "[bridge]" marker in the head commit subject forces the bridge
+          # release (old asset names + min_sdk 23) so installs of 0.2.169 and
+          # earlier can cross over to the new update channel automatically.
+          BRIDGE_COMMIT=false
+          if git log -1 --format=%s | grep -q '\[bridge\]'; then BRIDGE_COMMIT=true; fi
           case "$GITHUB_REF_NAME" in
             v*)
               # Tag push: release exactly the tagged version.
@@ -62,11 +67,16 @@ jobs:
           esac
           TAG="v$VERSION"
           CODE=$(echo "$VERSION" | awk -F. '{print $1*10000 + $2*100 + $3}')
+          BRIDGE=false
+          if [ "$BRIDGE_COMMIT" = "true" ]             || { [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "${GITHUB_EVENT_INPUTS_BRIDGE:-}" = "true" ]; }; then
+            BRIDGE=true
+          fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Version $VERSION, code $CODE, tag $TAG"
+          echo "bridge=$BRIDGE" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION, code $CODE, tag $TAG, bridge $BRIDGE"
 
   release:
     needs: version
