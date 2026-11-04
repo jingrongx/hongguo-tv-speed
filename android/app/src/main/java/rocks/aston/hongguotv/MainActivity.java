@@ -37,6 +37,10 @@ import java.io.InputStreamReader;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
+    // Shown when /api/v1/status reports an identity BuildConfig.CORE_VERSION
+    // does not expect; also routes AppUpdater into recovery mode, so keep it
+    // identifiable instead of comparing raw strings in two places.
+    private static final String CORE_VERSION_MISMATCH = "本机服务版本不匹配，请重试";
     private String coreUrl;
     private WebView webView;
     private NativePlayerAdapter playerBridge;
@@ -303,7 +307,7 @@ public class MainActivity extends Activity {
                             if (status.optBoolean("ok") && candidate.matches(status.optString("service"),
                                     status.optString("instance_id"), status.optString("version"), BuildConfig.CORE_VERSION)
                                     && candidate == CoreService.endpoint()) ready = candidate;
-                            else { failure = "本机服务版本不匹配，请重试"; break; }
+                            else { failure = CORE_VERSION_MISMATCH; break; }
                         }
                     }
                 } catch (Exception ignored) {
@@ -323,7 +327,15 @@ public class MainActivity extends Activity {
                     coreUrl = coreReady.url;
                     webView.loadUrl(coreUrl);
                     grantWebViewFocus(false);
-                } else { showStartupFailure(); startupMessage.setText(failureMessage); }
+                } else {
+                    showStartupFailure();
+                    startupMessage.setText(failureMessage);
+                    // A version mismatch never heals on retry — the child
+                    // reports an identity the APK does not expect. Offer the
+                    // update natively; the page this escape hatch normally
+                    // comes from never loaded in this failure mode.
+                    if (CORE_VERSION_MISMATCH.equals(failureMessage)) appUpdater.enterRecoveryMode();
+                }
             });
         }, "hongguo-tv-startup");
         startupThread.start();

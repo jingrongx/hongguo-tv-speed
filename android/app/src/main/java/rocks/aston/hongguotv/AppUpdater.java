@@ -111,10 +111,7 @@ final class AppUpdater {
          * through even though the page is dead. This is the escape hatch
          * that turns a broken release into an immediate offer to update.
          */
-        @JavascriptInterface public void checkAfterFailure() {
-            recoveryMode = true;
-            if (host.trusted()) activity.runOnUiThread(() -> { manualPrompt = true; checkNow(true); });
-        }
+        @JavascriptInterface public void checkAfterFailure() { enterRecoveryMode(); }
         /** Escape hatch: open the GitHub release page in the browser so the
           * latest APK can always be fetched manually, whatever the in-app
           * update validator thinks about the current channel. */
@@ -209,6 +206,18 @@ final class AppUpdater {
                 }
             });
         }
+    }
+
+    /**
+     * Native escape hatch for failures no page can report: a crashed page
+     * (Bridge.checkAfterFailure) or a core-version mismatch, where the
+     * WebView never loads at all. The check itself runs regardless of page
+     * readiness; canShow() waives the page gates in recovery mode, so the
+     * offer to update arrives as a plain native dialog.
+     */
+    void enterRecoveryMode() {
+        recoveryMode = true;
+        activity.runOnUiThread(() -> { manualPrompt = true; checkNow(true); });
     }
 
     private void checkNow(boolean manual) {
@@ -313,9 +322,13 @@ final class AppUpdater {
     }
 
     private boolean canShow() {
-        // In recovery mode the page is dead: skip its prompt permission and
-        // let the native dialog speak for itself.
-        return !destroyed && host.foreground() && host.trusted() && (promptAllowed || recoveryMode)
+        // In recovery mode the page is dead or was never loaded (page crash,
+        // or the core handshake failed so the WebView has no URL at all):
+        // skip its prompt permission and let the native dialog speak for
+        // itself. Without the trusted() waiver a version-mismatch device
+        // could never see the update offer that gets it unstuck.
+        return !destroyed && host.foreground() && (recoveryMode || host.trusted())
+                && (promptAllowed || recoveryMode)
                 && !activity.isFinishing() && !activity.isDestroyed() && dialog == null;
     }
 

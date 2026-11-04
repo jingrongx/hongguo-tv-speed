@@ -228,11 +228,35 @@ jobs:
       - name: Assemble APKs
         run: |
           set -e
+          # The startup handshake requires /api/v1/status version ==
+          # BuildConfig.CORE_VERSION (exact match). The Go cores above are
+          # built with -X main.version=$VERSION, so gradle must expect the
+          # same identity — its local default is "${appVersion}-dev", which
+          # is what v0.2.170-v0.2.178 shipped: every release APK died on
+          # 本机服务版本不匹配 before the UI ever loaded.
+          export HONGGUO_CORE_VERSION="$VERSION"
           # Package the two flavors in separate Gradle invocations: AGP's
           # native-library splitter can race when both flavors are packaged
           # in the same invocation on a hosted runner.
           gradle --no-daemon --max-workers=1 -p android assembleStandardRelease
           gradle --no-daemon --max-workers=1 -p android assembleMpvRelease
+          # Tripwire: a release APK must never carry the -dev core identity
+          # (that pairing only exists in local builds) and its core binary
+          # must report exactly $VERSION. Catches either side drifting again.
+          for apk in android/app/build/outputs/apk/standard/release/app-standard-release.apk android/app/build/outputs/apk/mpv/release/app-mpv-release.apk; do
+            if unzip -p "$apk" 'classes*.dex' | grep -aqF "$VERSION-dev"; then
+              echo "$apk embeds CORE_VERSION=$VERSION-dev but cores report $VERSION" >&2
+              exit 1
+            fi
+            if unzip -p "$apk" lib/arm64-v8a/libhongguotv.so | grep -aqF "$VERSION-dev"; then
+              echo "$apk core binary reports $VERSION-dev instead of $VERSION" >&2
+              exit 1
+            fi
+            if ! unzip -p "$apk" lib/arm64-v8a/libhongguotv.so | grep -aqF "$VERSION"; then
+              echo "$apk core binary does not report $VERSION" >&2
+              exit 1
+            fi
+          done
 
       - name: Verify APK signature
         run: |
