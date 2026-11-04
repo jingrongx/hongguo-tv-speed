@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 372,
+  "version_code": 373,
   "min_sdk": 21,
-  "version_name": "0.2.172",
+  "version_name": "0.2.173",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19490120,
-  "sha256": "bf1095bb4d1db2f6a72a085db946ab8a1da8d335a678837eee25721cc8f8a400",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.172/hongguo-tv-speed-0.2.172.apk",
-  "release_notes": "- docs: README 高级排版重写——居中头图徽章、三版本下载表、折叠次要内容",
+  "size": 19489009,
+  "sha256": "3bd558a3af24ecfa494a00d3ce8cf2785f4717c04154714398636512014fef13",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.173/hongguo-tv-speed-0.2.173.apk",
+  "release_notes": "- feat(update): 设置页增加浏览器下载按钮；每次解析轮换匿名身份根治限流",
   "variant": "standard"
 }

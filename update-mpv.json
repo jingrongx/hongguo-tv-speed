@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 372,
+  "version_code": 373,
   "min_sdk": 21,
-  "version_name": "0.2.172",
+  "version_name": "0.2.173",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63316785,
-  "sha256": "d531086827e8e33af42d25785403d342b0d73ae64a94017c5db8ce8111f3f122",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.172/hongguo-tv-speed-mpv-0.2.172.apk",
-  "release_notes": "- docs: README 高级排版重写——居中头图徽章、三版本下载表、折叠次要内容",
+  "size": 63315626,
+  "sha256": "8426bbdebb271b772e32c8703004d5c645a96e17d8a5f044991345aeb88ea13a",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.173/hongguo-tv-speed-mpv-0.2.173.apk",
+  "release_notes": "- feat(update): 设置页增加浏览器下载按钮；每次解析轮换匿名身份根治限流",
   "variant": "mpv"
 }
