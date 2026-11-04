@@ -2240,6 +2240,7 @@
     if (!toggle) return;
     var enabled = playbackPreferences.loudness !== false;
     toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    toggle.classList.toggle('account-primary', enabled);
     toggle.textContent = uiText(enabled ? 'settings.loudnessEnabled' : 'settings.loudnessDisabled', enabled ? '已开启' : '已关闭');
     var state = document.getElementById('loudness-state');
     if (state) state.textContent = uiText('settings.loudnessState', '统一各剧响度，下次播放或切集时生效。');
@@ -9460,6 +9461,7 @@
     var toggle = document.getElementById('webos-audio-toggle');
     var enabled = audio.isEnabled();
     toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    toggle.classList.toggle('account-primary', enabled);
     toggle.textContent = enabled ? uiText('settings.autoCinemaEnabled', '已开启') : uiText('settings.autoCinemaDisabled', '已关闭');
   }
   updateWebOSAudioSettings();

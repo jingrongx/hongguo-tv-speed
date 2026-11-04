@@ -921,7 +921,13 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 }
 .account-form-actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.5rem; }
 .account-action { padding: .9rem 1.3rem; font: inherit; font-size: 1.15rem; color: #1d2534; border: 2px solid transparent; border-radius: 12px; background: #e2e6ee; cursor: pointer; }
-.account-primary { background: #2e7bef; }
+.account-primary { background: #2e7bef; color: #ffffff; }
+
+/* Stateful settings toggles: aria-pressed="true" means the option is on.
+   Pair buttons (language, sidebar display, decode mode) highlight the chosen
+   one; single toggles highlight themselves while enabled. Without this the
+   button color never changed and the on/off state was only in the text. */
+.settings-card .account-action[aria-pressed="true"] { color: #ffffff; background: #2e7bef; }
 .account-action:focus:not(.pointer-focus-muted), .account-action.is-focused { outline: none; border-color: transparent; background: #2e7bef; color: #ffffff; box-shadow: 0 0 0 3px rgba(46,123,239,.3), 0 8px 22px rgba(46,123,239,.35); }
 .account-action:disabled { opacity: .45; cursor: default; }
 .account-message { min-height: 1.5em; margin-bottom: 0; color: #d64550 !important; word-wrap: break-word; overflow-wrap: anywhere; }
