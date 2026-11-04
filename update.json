@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 374,
+  "version_code": 375,
   "min_sdk": 21,
-  "version_name": "0.2.174",
+  "version_name": "0.2.175",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19490518,
-  "sha256": "3ef71b0e8ef5efcac4d3c3f8bb31686bad3a2f8c45ff8b2a4aa9b33d60771390",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.174/hongguo-tv-speed-0.2.174.apk",
-  "release_notes": "- fix(settings): 状态开关补齐选中态样式（aria-pressed 蓝色高亮），响度与 webOS 音频开关补状态类",
+  "size": 19490539,
+  "sha256": "559fb07f3f8a96527ddec6b3862ad02f12097df13bfe8dc89458057c5fc11cb7",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.175/hongguo-tv-speed-0.2.175.apk",
+  "release_notes": "- ci: 恢复常规发版，衔接完成",
   "variant": "standard"
 }
