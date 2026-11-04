@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 376,
+  "version_code": 377,
   "min_sdk": 21,
-  "version_name": "0.2.176",
+  "version_name": "0.2.177",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63317138,
-  "sha256": "721cc30f4a4d642c8e68bfdd75b0700bd025687fa24ac66f3a4dfcdcb83ff92c",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.176/hongguo-tv-speed-mpv-0.2.176.apk",
-  "release_notes": "- ci: 发布衔接版本供旧设备自动升级过桥 [bridge]",
+  "size": 63317136,
+  "sha256": "bdc649f04a7fb3c016a7dc00988e95c69f9c9853c3e01cda4720d7a3bc335a81",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.177/hongguo-tv-speed-mpv-0.2.177.apk",
+  "release_notes": "- ci: 恢复常规发版，衔接完成",
   "variant": "mpv"
 }
