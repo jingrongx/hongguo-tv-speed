@@ -263,6 +263,7 @@
   "settings.languageSaveFailed": "語言設定未能保存，請重試。",
   "settings.updates": "版本更新",
   "settings.checkUpdates": "檢查更新",
+  "settings.browserDownload": "瀏覽器下載",
   "settings.playback": "播放解碼",
   "settings.autoDecode": "自動解碼",
   "settings.softwareDecode": "軟體解碼",

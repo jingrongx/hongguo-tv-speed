@@ -9325,6 +9325,9 @@
       else if (data.state === 'browser') current.textContent = uiText('ui.browserPreview', '网页预览');
       document.getElementById('app-update-state').textContent = data.message || uiText('ui.updateDefault', '启动后每小时自动检查一次，静默下载，就绪后询问安装。');
       var check = document.getElementById('app-check-update');
+      var browserDownload = document.getElementById('app-browser-download');
+      // Manual browser download only makes sense where a browser exists.
+      browserDownload.classList.toggle('is-hidden', !data.supported || data.desktop || webosShell);
       // Keep the active TV focus node alive while native checking/download runs.
       check.disabled = !data.supported;
       check.setAttribute('aria-disabled', data.state === 'checking' || data.state === 'downloading' || data.state === 'installing' ? 'true' : 'false');
@@ -9364,6 +9367,11 @@
     }
   });
   document.getElementById('app-check-update').addEventListener('click', appUpdates.activate);
+  document.getElementById('app-browser-download').addEventListener('click', function () {
+    // Manual escape hatch: the GitHub release page always serves the latest
+    // APK regardless of what the in-app update validator decides.
+    if (!desktopShell && !webosShell && window.HongguoTVUpdates && window.HongguoTVUpdates.openReleases) window.HongguoTVUpdates.openReleases();
+  });
   document.getElementById('desktop-download-update').addEventListener('click', function () { if (desktopShell) window.HongguoTVUpdates.download(); });
   document.getElementById('desktop-open-update-folder').addEventListener('click', function () { if (desktopShell) window.HongguoTVUpdates.openFolder(); });
   var playbackSettings = window.HongguoPlaybackSettings.create({

@@ -266,6 +266,7 @@
     'settings.languageSaveFailed': '语言设置未能保存，请重试。',
     'settings.updates': '版本更新',
     'settings.checkUpdates': '检查更新',
+    'settings.browserDownload': '浏览器下载',
     'settings.playback': '播放解码',
     'settings.autoDecode': '自动解码',
     'settings.softwareDecode': '软件解码',

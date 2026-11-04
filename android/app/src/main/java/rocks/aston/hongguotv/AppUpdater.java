@@ -115,6 +115,18 @@ final class AppUpdater {
             recoveryMode = true;
             if (host.trusted()) activity.runOnUiThread(() -> { manualPrompt = true; checkNow(true); });
         }
+        /** Escape hatch: open the GitHub release page in the browser so the
+          * latest APK can always be fetched manually, whatever the in-app
+          * update validator thinks about the current channel. */
+        @JavascriptInterface public void openReleases() {
+            if (!host.trusted()) return;
+            activity.runOnUiThread(() -> {
+                try {
+                    activity.startActivity(new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/" + UpdatePolicy.REPOSITORY + "/releases/latest")));
+                } catch (Exception ignored) { /* no browser on the device */ }
+            });
+        }
         void checkAuto() { activity.runOnUiThread(() -> checkNow(false)); }
         @JavascriptInterface public void install() {
             if (host.trusted()) activity.runOnUiThread(() -> {
