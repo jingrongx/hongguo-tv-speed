@@ -22,6 +22,7 @@
     if (!surface || !surface.addEventListener) return function () {};
     options = options || {};
     var previousZone = '', doubleZone = '';
+    var lastTouchAt = 0, tapTimer = null;
     function allowed(event) {
       return !event.defaultPrevented && !(event.button > 0) && !event.ctrlKey && !event.metaKey &&
         !event.altKey && !event.shiftKey && (!options.isEnabled || options.isEnabled()) &&
@@ -30,17 +31,33 @@
     function click(event) {
       if (!allowed(event) || !event.detail) { previousZone = doubleZone = ''; return; }
       var zone = zoneAt(surface.getBoundingClientRect(), event.clientX, event.clientY);
+      var touch = Date.now() - lastTouchAt < 800;
       doubleZone = event.detail === 2 && previousZone === zone ? zone : '';
       previousZone = zone;
       if (!zone) return;
       event.preventDefault();
-      // Side single-clicks do nothing, so a double-click never flashes controls
-      // or briefly pauses playback. The centre acts immediately, once per pair.
-      if (event.detail !== 1) return;
-      if (zone === 'play' && options.onTogglePlayback) options.onTogglePlayback();
-      else if (zone === 'controls' && options.onToggleControls) options.onToggleControls();
+      if (!touch) {
+        // Side single-clicks do nothing, so a double-click never flashes
+        // controls or briefly pauses playback. The centre acts immediately.
+        if (event.detail !== 1) return;
+        if (zone === 'play' && options.onTogglePlayback) options.onTogglePlayback();
+        else if (zone === 'controls' && options.onToggleControls) options.onToggleControls();
+        return;
+      }
+      // Touch: a single tap anywhere toggles the control bar (debounced so a
+      // double tap never flashes it); a double tap seeks from the side zones
+      // and toggles playback in the centre.
+      if (event.detail !== 1) {
+        if (tapTimer !== null) { clearTimeout(tapTimer); tapTimer = null; }
+        if (zone === 'back' || zone === 'forward') { if (options.onSeek) options.onSeek(zone === 'back' ? -10 : 10); }
+        else if (zone === 'play' && options.onTogglePlayback) options.onTogglePlayback();
+        return;
+      }
+      if (tapTimer !== null) return;
+      tapTimer = setTimeout(function () { tapTimer = null; if (options.onToggleControls) options.onToggleControls(); }, 280);
     }
     function doubleClick(event) {
+      if (Date.now() - lastTouchAt < 800) { previousZone = doubleZone = ''; return; }
       if (!allowed(event)) { previousZone = doubleZone = ''; return; }
       var zone = zoneAt(surface.getBoundingClientRect(), event.clientX, event.clientY);
       if (zone && zone === doubleZone && (zone === 'back' || zone === 'forward')) {
@@ -53,10 +70,13 @@
     surface.addEventListener('click', click, false);
     surface.addEventListener('dblclick', doubleClick, false);
     surface.addEventListener('mouseleave', reset, false);
+    surface.addEventListener('touchstart', function () { lastTouchAt = Date.now(); }, false);
     return function () {
       surface.removeEventListener('click', click, false);
       surface.removeEventListener('dblclick', doubleClick, false);
       surface.removeEventListener('mouseleave', reset, false);
+      surface.removeEventListener('touchstart', function () { lastTouchAt = Date.now(); }, false);
+      if (tapTimer !== null) { clearTimeout(tapTimer); tapTimer = null; }
     };
   }
   function createFeedback(surface, timers) {

@@ -131,9 +131,9 @@ jobs:
             go build -trimpath -buildmode=pie -ldflags "-s -w -X main.version=$VERSION-dev" \
             -o "$OUT/$1/libhongguotv.so" ./core/cmd/hongguotv
           }
-          build arm64-v8a   arm64 aarch64-linux-android23-clang
-          build armeabi-v7a arm   armv7a-linux-androideabi23-clang
-          build x86_64      amd64 x86_64-linux-android23-clang
+          build arm64-v8a   arm64 aarch64-linux-android21-clang
+          build armeabi-v7a arm   armv7a-linux-androideabi21-clang
+          build x86_64      amd64 x86_64-linux-android21-clang
           ls -la $OUT/*/libhongguotv.so
 
       - name: Fetch mpv-android libraries
@@ -167,7 +167,7 @@ jobs:
           set -e
           NDK_BIN="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
           SYSROOT="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          for t in "arm64-v8a aarch64-linux-android23" "armeabi-v7a armv7a-linux-androideabi23" "x86 i686-linux-android23"; do
+          for t in "arm64-v8a aarch64-linux-android21" "armeabi-v7a armv7a-linux-androideabi21" "x86 i686-linux-android21"; do
             set -- $t
             "$NDK_BIN/clang++" --target=$2 --sysroot="$SYSROOT"               -std=c++17 -O2 -fPIC -shared -static-libstdc++ -Wl,--no-undefined               -Iandroid/mpv-jni/include android/mpv-jni/bridge.cpp               -Landroid/app/src/mpv/jniLibs/$1 -lmpv -lavcodec -landroid               -o android/app/src/mpv/jniLibs/$1/libhongguompv.so
           done
@@ -214,8 +214,8 @@ jobs:
           set -e
           test -n "$VERSION" && test -n "$CODE"
           mkdir -p stage
-          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-tv-speed-mpv-$VERSION.apk"
-          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
+          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-phone-speed-mpv-$VERSION.apk"
+          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-phone-speed-$VERSION.apk"
           python3 - "$VERSION" "$CODE" <<'PY'
           import hashlib, io, json, sys
           version, code = sys.argv[1], int(sys.argv[2])
@@ -223,8 +223,8 @@ jobs:
               notes = handle.read().strip()
           base = 'https://github.com/jingrongx/hongguo-tv-speed/releases/download/v' + version + '/'
           variants = (
-              ('mpv', 'com.jingrongx.hongguotv.mpv', 'hongguo-tv-speed-mpv-' + version + '.apk', 'update-mpv.json'),
-              ('standard', 'com.jingrongx.hongguotv', 'hongguo-tv-speed-' + version + '.apk', 'update.json'),
+              ('mpv', 'com.jingrongx.hongguotv.mpv', 'hongguo-phone-speed-mpv-' + version + '.apk', 'update-mpv.json'),
+              ('standard', 'com.jingrongx.hongguotv', 'hongguo-phone-speed-' + version + '.apk', 'update.json'),
           )
           for variant, package, artifact, name in variants:
               with open('stage/' + artifact, 'rb') as handle:
@@ -232,7 +232,7 @@ jobs:
               manifest = {
                   'schema': 1,
                   'version_code': code,
-                  'min_sdk': 23,
+                  'min_sdk': 21,
                   'version_name': version,
                   'package_name': package,
                   'size': len(blob),
@@ -261,13 +261,13 @@ jobs:
           {
             cat stage/release_notes.md
             echo
-            echo "**MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk"
-            echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
+            echo "**MPV 版**（推荐）：hongguo-phone-speed-mpv-$VERSION.apk"
+            echo "**标准版**：hongguo-phone-speed-$VERSION.apk"
           } > stage/release_body.md
           gh release create "v$VERSION" --title "红果极速 TV v$VERSION" \
             --notes-file stage/release_body.md --draft=false --prerelease=false \
-            || gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
-          gh release upload "v$VERSION" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+            || gh release upload "v$VERSION" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+          gh release upload "v$VERSION" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
           # Re-runs must refresh a stale body, not only the assets.
           gh release edit "v$VERSION" --notes-file stage/release_body.md
 

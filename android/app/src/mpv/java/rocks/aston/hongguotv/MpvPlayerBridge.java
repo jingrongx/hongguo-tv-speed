@@ -939,11 +939,17 @@ public final class MpvPlayerBridge implements NativePlayerAdapter, SurfaceHolder
         if (!stopFence.isActive()) applyBounds();
     }
     private boolean applyBounds() {
-        if (!PlaybackBounds.valid(left, top, width, height)) return false;
-        int w = Math.round(web.getWidth() * width), h = Math.round(web.getHeight() * height);
+        // Invalid or never-reported geometry must not kill the session: fall
+        // back to the full WebView surface. The page normally reports exact
+        // fractions, but a stale or mid-layout stage can leave zeros cached —
+        // refusing to start here turned into a permanent "display" dead end
+        // on some devices (MPV 加载: 未请求打开 diagnostics).
+        float fl = left, ft = top, fw = width, fh = height;
+        if (!PlaybackBounds.valid(fl, ft, fw, fh)) { fl = 0; ft = 0; fw = 1; fh = 1; }
+        int w = Math.round(web.getWidth() * fw), h = Math.round(web.getHeight() * fh);
         if (!PlaybackBounds.visible(w, h)) return false;
         FrameLayout.LayoutParams current = (FrameLayout.LayoutParams) holder.getLayoutParams();
-        int l = Math.round(web.getWidth() * left), t = Math.round(web.getHeight() * top);
+        int l = Math.round(web.getWidth() * fl), t = Math.round(web.getHeight() * ft);
         if (current != null && current.width == w && current.height == h
                 && current.leftMargin == l && current.topMargin == t) {
             return true;

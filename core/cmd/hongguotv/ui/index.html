@@ -3,6 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // High-density small screens (portrait car head units, phones): the TV
+    // layout must not be blown up by the display pixel ratio, but pure
+    // 1 CSS px = 1 device px rendering reads as too small on hand-held
+    // screens. Pick a middle density: at most 1.25 device pixels per CSS
+    // pixel, and never fewer CSS pixels than the 960px shell needs. TVs and
+    // desktops (ratio 1, no touch) keep the default device-width viewport.
+    (function () {
+      'use strict';
+      function applyViewport() {
+        if (!('ontouchstart' in window) && !(navigator.maxTouchPoints > 0)) return;
+        var dpr = window.devicePixelRatio || 1;
+        var cssWidth = (window.screen && window.screen.width) || 0;
+        if (dpr <= 1 || !cssWidth) return;
+        var physicalWidth = Math.round(cssWidth * dpr);
+        // Aim for a ~740px layout: compact enough that TV-sized controls read
+        // at a comfortable hand-held size, wide enough for the chrome. The
+        // narrow-screen CSS (max-width: 960px) collapses the sidebar to an
+        // icon rail so these widths fit without horizontal clipping.
+        var density = Math.min(1.6, Math.max(1.15, physicalWidth / 740));
+        var layoutWidth = Math.round(physicalWidth / density);
+        var scale = Math.round(density / dpr * 10000) / 10000;
+        var meta = document.querySelector('meta[name="viewport"]');
+        if (meta) meta.setAttribute('content', 'width=' + layoutWidth + ', initial-scale=' + scale + ', user-scalable=no');
+      }
+      applyViewport();
+      if (document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', applyViewport);
+        window.addEventListener('resize', applyViewport);
+      }
+    })();
+  </script>
   <title data-i18n="app.name">红果极速</title>
   <script src="/compat.js"></script>
   <script src="/locales/zh-CN.js"></script>
@@ -429,6 +461,7 @@
         </div>
         <div class="player-status is-hidden" id="player-status" role="status" aria-live="polite"><span class="player-spinner" aria-hidden="true"></span><span class="player-status-title is-hidden" id="player-status-title"></span><span id="player-status-text"></span><div class="player-status-actions"><button class="control-button has-icon player-failure-action player-failure-retry is-hidden" id="player-retry" data-action="retry" data-focus="player-retry"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-retry" xlink:href="#icon-retry"></use></svg><span class="control-label" data-i18n="common.retryPlayback">重试播放</span></span></button><button class="control-button has-icon player-failure-action player-failure-diagnostics is-hidden" id="player-failure-diagnostics" data-action="diagnostics" data-focus="player-failure-diagnostics" aria-haspopup="dialog" aria-controls="player-options"><span class="control-content"><svg aria-hidden="true" focusable="false"><use href="#icon-diagnostics" xlink:href="#icon-diagnostics"></use></svg><span class="control-label" data-i18n="modal.diagnostics">播放诊断</span></span></button></div></div>
         <section id="more-panel" class="more-panel is-hidden" role="dialog" aria-modal="false" aria-label="更多功能" data-i18n-aria-label="ui.morePanel" aria-hidden="true">
+          <button class="more-panel-close" id="more-panel-close" data-focus="more-panel-close" aria-label="关闭" data-i18n-aria-label="common.close">×</button>
           <div class="more-grid">
             <button class="more-tile" data-action="nav-search" data-focus="more-search"><span class="tile-icon"><svg aria-hidden="true" focusable="false"><use href="#icon-search" xlink:href="#icon-search"></use></svg></span><span class="tile-label" data-i18n="nav.search">找剧</span></button>
             <button class="more-tile" data-action="nav-rank" data-focus="more-rank"><span class="tile-icon"><svg aria-hidden="true" focusable="false"><use href="#icon-rank" xlink:href="#icon-rank"></use></svg></span><span class="tile-label" data-i18n="nav.rank">排行榜</span></button>

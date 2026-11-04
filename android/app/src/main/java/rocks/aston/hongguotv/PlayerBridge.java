@@ -500,11 +500,15 @@ final class PlayerBridge implements NativePlayerAdapter {
         width=Math.max(0,Math.min(1-left,w));height=Math.max(0,Math.min(1-top,h));applyBounds();
     });}
     private boolean applyBounds(){
-        if(!PlaybackBounds.valid(left,top,width,height))return false;
-        int viewW=Math.round(web.getWidth()*width),viewH=Math.round(web.getHeight()*height);
+        // Invalid or never-reported geometry falls back to the full WebView
+        // surface instead of failing the session with "display": refusing to
+        // start left some devices unable to play at all.
+        float l=left,t=top,w=width,h=height;
+        if(!PlaybackBounds.valid(l,t,w,h)){l=0;t=0;w=1;h=1;}
+        int viewW=Math.round(web.getWidth()*w),viewH=Math.round(web.getHeight()*h);
         if(!PlaybackBounds.visible(viewW,viewH))return false;
         FrameLayout.LayoutParams layout=new FrameLayout.LayoutParams(viewW,viewH);
-        layout.leftMargin=Math.round(web.getWidth()*left);layout.topMargin=Math.round(web.getHeight()*top);holder.setLayoutParams(layout);
+        layout.leftMargin=Math.round(web.getWidth()*l);layout.topMargin=Math.round(web.getHeight()*t);holder.setLayoutParams(layout);
         return true;
     }
     private void fit(){

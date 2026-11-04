@@ -140,6 +140,7 @@ type miniReelPlaybackDeviceCache struct {
 	register func() (miniReelDevice, error)
 	device   miniReelDevice
 	ready    bool
+	bornAt   time.Time
 	pending  *miniReelPlaybackDeviceRegistration
 }
 
@@ -151,6 +152,28 @@ type miniReelPlaybackDeviceRegistration struct {
 
 func newMiniReelPlaybackDeviceCache(register func() (miniReelDevice, error)) *miniReelPlaybackDeviceCache {
 	return &miniReelPlaybackDeviceCache{register: register}
+}
+
+// reset drops the cached anonymous device so the next get() registers a
+// fresh identity from the passport endpoint. Used when persistent upstream
+// soft-blocks suggest the device identity itself is flagged.
+func (c *miniReelPlaybackDeviceCache) reset() {
+	c.mu.Lock()
+	c.ready = false
+	c.device = miniReelDevice{}
+	c.bornAt = time.Time{}
+	c.mu.Unlock()
+}
+
+// age reports how long the current cached identity has been in service.
+// A zero value means no identity is cached right now.
+func (c *miniReelPlaybackDeviceCache) age() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.bornAt.IsZero() {
+		return 0
+	}
+	return time.Since(c.bornAt)
 }
 
 func (c *miniReelPlaybackDeviceCache) get() (miniReelDevice, error) {
@@ -173,6 +196,7 @@ func (c *miniReelPlaybackDeviceCache) get() (miniReelDevice, error) {
 	c.mu.Lock()
 	if pending.err == nil {
 		c.device = pending.device
+		c.bornAt = time.Now()
 		c.ready = true
 	}
 	if c.pending == pending {
@@ -728,9 +752,36 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 	return miniReelNativeOptionsEndpoint(ctx, vid, miniReelAPIBase+miniReelAPIPath)
 }
 
+// The upstream risk engine rejects a second video-model request from the
+// same device within roughly a minute of the previous one, so fast episode
+// switches land inside that window and get empty responses. A fresh
+// anonymous device starts with a clean interval clock: swap identities
+// instead of failing into the long escalating cooldown.
+var (
+	miniReelResolveSuccessMu sync.Mutex
+	miniReelResolveSuccessAt time.Time
+)
+
+const miniReelDeviceIntervalWindow = 75 * time.Second
+
+func miniReelMarkResolveSuccess() {
+	miniReelResolveSuccessMu.Lock()
+	miniReelResolveSuccessAt = time.Now()
+	miniReelResolveSuccessMu.Unlock()
+}
+
+func miniReelResolveRecentlySucceeded() bool {
+	miniReelResolveSuccessMu.Lock()
+	defer miniReelResolveSuccessMu.Unlock()
+	return !miniReelResolveSuccessAt.IsZero() && time.Since(miniReelResolveSuccessAt) < miniReelDeviceIntervalWindow
+}
+
 func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([]miniReelOption, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if miniReelResolveRecentlySucceeded() {
+		miniReelPlaybackIdentity.reset()
 	}
 	device, err := miniReelPlaybackIdentity.get()
 	if err != nil {
@@ -762,14 +813,30 @@ func miniReelThrottleRemaining() time.Duration {
 }
 
 func miniReelMarkThrottled() {
+	identityAge := miniReelPlaybackIdentity.age()
 	miniReelThrottleMu.Lock()
 	miniReelThrottleStreak++
-	cooldown := miniReelThrottleBase * time.Duration(miniReelThrottleStreak)
-	if cooldown > 5*time.Minute {
-		cooldown = 5 * time.Minute
-	}
-	miniReelThrottledUntil = time.Now().Add(cooldown)
+	miniReelThrottledUntil = time.Now().Add(miniReelThrottleBase * time.Duration(miniReelThrottleStreak))
 	miniReelThrottleMu.Unlock()
+	// Two distinct blocking axes show up as empty responses:
+	//   1. Per-identity quota: each anonymous device gets a handful of
+	//      resolutions before the risk engine soft-blocks it — the user sees
+	//      "played one or two episodes, then blocked". An identity that has
+	//      been in service for over a minute has simply spent its quota:
+	//      rotate immediately and pause only briefly, because a fresh
+	//      identity starts with a clean clock.
+	//   2. IP-level or global blocking: a freshly rotated identity fails
+	//      right away too. Escalate the long cooldown there; nothing short
+	//      helps until the window passes.
+	if identityAge > time.Minute {
+		miniReelPlaybackIdentity.reset()
+		miniReelThrottleMu.Lock()
+		miniReelThrottledUntil = time.Now().Add(15 * time.Second)
+		miniReelThrottleMu.Unlock()
+		log.Printf("[minireel] throttle: identity age %s spent its quota, rotating and retrying in ~15s", identityAge.Round(time.Second))
+		return
+	}
+	log.Printf("[minireel] throttle streak=%d on a young identity (%s): escalating cooldown", miniReelThrottleStreak, identityAge.Round(time.Second))
 }
 
 func miniReelClearThrottle() {
@@ -793,6 +860,7 @@ func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint 
 		options, err := miniReelNativeOptionsAttemptPolicy(ctx, vid, endpoint, device, nil, attempt)
 		if err == nil {
 			miniReelClearThrottle()
+			miniReelMarkResolveSuccess()
 			// Successes were invisible in diagnostics while every failure
 			// logged; without this line the resolve-interval pattern could
 			// not be measured from device logs.

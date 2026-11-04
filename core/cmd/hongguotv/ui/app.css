@@ -301,11 +301,11 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 .playback-menu-hint { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(0,0,0,.48); pointer-events: none; }
 .onboarding-overlay { position: fixed; z-index: 90; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(15,23,42,.42); }
 .onboarding-card { width: 100%; max-width: 760px; max-height: 92vh; overflow: auto; padding: 36px 40px 30px; box-sizing: border-box; color: #1d2534; background: rgba(255,255,255,.96); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; box-shadow: 0 14px 44px rgba(0,0,0,.5); }
-.onboarding-title { margin: 0 0 24px; color: #f2f4f8; font-size: 34px; font-weight: 600; }
+.onboarding-title { margin: 0 0 24px; color: #1d2534; font-size: 34px; font-weight: 600; }
 .onboarding-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 18px; }
-.onboarding-list li { display: flex; align-items: baseline; gap: 22px; color: #d6d6e0; font-size: 28px; }
+.onboarding-list li { display: flex; align-items: baseline; gap: 22px; color: #4d5766; font-size: 28px; }
 .onboarding-list strong { flex: 0 0 118px; color: #5b9dff; font-size: 30px; text-align: right; }
-.onboarding-foot { margin: 26px 0 0; color: #9aa3b5; font-size: 22px; text-align: center; }
+.onboarding-foot { margin: 26px 0 0; color: #8a93a6; font-size: 22px; text-align: center; }
 /* ---- Control center: floating dock -------------------------------------
    One dark glass dock over the video. Secondary keys stay bare and let the
    focused key light up; the white play key is the single visual anchor,
@@ -796,7 +796,7 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 .detail-cast-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
 .detail-cast-more { flex: 0 0 auto; min-height: 36px; padding: 0 10px; color: #5b9dff; background: transparent; border: 1px solid rgba(91,157,255,.45); border-radius: 6px; font-size: 15px; }
 .detail-cast-modal { position: absolute; z-index: 5; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(15,23,42,.46); }
-.detail-cast-dialog { display: flex; width: min(760px, 94%); max-height: 78vh; flex-direction: column; overflow: hidden; padding: 20px; background: rgba(255,255,255,.85); border: 1px solid #484a56; border-radius: 10px; }
+.detail-cast-dialog { display: flex; width: 94%; max-width: 760px; max-height: 78vh; flex-direction: column; overflow: hidden; padding: 20px; background: rgba(255,255,255,.85); border: 1px solid #484a56; border-radius: 10px; }
 .detail-cast-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; }
 .detail-cast-heading h2 { margin: 0; color: #1d2534; font-size: 22px; }
 .detail-cast-close { width: 42px; height: 42px; color: #1d2534; background: #d9deea; border-radius: 7px; font-size: 26px; }
@@ -1156,3 +1156,30 @@ html.native-playback .hero-video { display: none !important; }
 .desktop-update-notes { max-width: 70rem; margin: 1rem 0; white-space: pre-wrap; overflow-wrap: break-word; font: inherit; color: #414b5c; line-height: 1.6; }
 .webos-update-notes { max-height: 18rem; overflow-y: auto; padding: 14px; border: 2px solid #b9c2d2; border-radius: 8px; }
 .webos-update-notes.is-focused, .webos-update-notes:focus { outline: none; border-color: rgba(46,123,239,.9); }
+
+/* ---- Touch layouts (phones, portrait car head units) ------------------- */
+/* The viewport script picks a ~740px layout width on touch screens with a
+   device pixel ratio above 1. Collapse the shell to an icon rail and compact
+   the chrome so every control reads large without horizontal clipping. TVs
+   and desktops (wider layouts) never match this query. */
+@media (max-width: 960px) {
+  .app-shell { min-width: 0; min-height: 0; }
+  .sidebar { flex-basis: 96px; padding: 14px 8px 12px; }
+  .brand { justify-content: center; padding: 0; }
+  .brand > span:last-child, .side-item > span { display: none; }
+  .brand-mark { flex: 0 0 42px; width: 42px; height: 42px; border-radius: 12px; }
+  .brand-mark svg { width: 24px; height: 24px; }
+  .side-item { display: block; min-height: 48px; padding: 8px 0; text-align: center; }
+  .side-icon { width: 34px; height: 34px; vertical-align: middle; }
+  .main-surface { width: calc(100% - 96px); }
+  .top-bar { min-height: 60px; padding: 12px 16px; }
+  .hero-top-copy { top: 64px; left: 16px; }
+  .bottom-controls { width: 96%; max-width: 780px; bottom: 18px; padding: 12px 22px 10px; border-radius: 26px; }
+  .playback-buttons { gap: 34px; padding: 12px 0 6px; }
+  .more-panel { width: 96%; max-width: 800px; padding: 18px 20px 16px; border-radius: 26px; }
+  .more-grid { gap: 12px; }
+  .more-panel-close { position: absolute; top: 8px; right: 10px; display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0; color: #ffffff; background: rgba(255,255,255,.1); border: 0; border-radius: 50%; font-size: 24px; line-height: 1; }
+  .more-panel-close.is-focused, .more-panel-close:focus:not(.pointer-focus-muted) { background: rgba(255,255,255,.2); box-shadow: 0 0 0 2.5px rgba(255,255,255,.9); }
+  .detail-dialog { width: 96vw; }
+  .search-page, .page-workspace { padding-left: 16px; padding-right: 16px; }
+}

@@ -3,8 +3,8 @@
   function t(key, fallback, params) {
     return window.HongguoI18n && window.HongguoI18n.t ? window.HongguoI18n.t(key, params, fallback) : fallback;
   }
-  // Android 6 can retain its original Chromium 44 WebView. Keep this file
-  // ES5 and load it before pagination and app initialization.
+  // Android 5.1+ car head units can retain an original Chromium 37 WebView.
+  // Keep this file ES5 and load it before pagination and app initialization.
   if (window.NodeList && !NodeList.prototype.forEach) NodeList.prototype.forEach = Array.prototype.forEach;
   if (!Object.assign) Object.assign = function (target) {
     if (target == null) throw new TypeError('Object.assign target');

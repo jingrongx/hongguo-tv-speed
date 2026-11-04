@@ -18,7 +18,7 @@ final class UpdatePolicy {
         if (!("standard".equals(variant) || "mpv".equals(variant))
                 || !(variant.equals(declared) || "standard".equals(variant) && declared.isEmpty())
                 || !("com.jingrongx.hongguotv" + ("mpv".equals(variant) ? ".mpv" : "")).equals(packageName)
-                || minSdk < 23)
+                || minSdk < 21)
             throw new IllegalArgumentException("更新包与当前应用版本类型不匹配");
     }
     /** Ordered public mirrors. The GitHub URL remains the final fallback. */
@@ -51,17 +51,20 @@ final class UpdatePolicy {
             throw new IllegalArgumentException("更新信息尚未刷新或版本不一致，请稍后重试");
         if (!installedPackage.equals(packageName) || code <= 0 || name == null
                 || !name.matches("[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?")
-                || minSdk < 23 || bytes <= 0 || bytes > MAX_APK_BYTES
+                || minSdk < 21 || bytes <= 0 || bytes > MAX_APK_BYTES
                 || sha256 == null || !sha256.matches("[a-fA-F0-9]{64}"))
             throw new IllegalArgumentException("版本信息不完整或不匹配");
         URI uri = URI.create(download);
         String path = uri.getRawPath();
         String prefix = "/" + REPOSITORY + "/releases/download/v" + name + "/";
         // Speed-edition asset naming, distinct from the upstream project.
+        // 0.2.171+ ships as hongguo-phone-speed-{mpv-}<ver>.apk; the older
+        // hongguo-tv-speed-* names cannot be accepted here because installs
+        // running the previous validator never see this code anyway.
         if (!"https".equals(uri.getScheme()) || !"github.com".equals(uri.getHost())
                 || uri.getRawUserInfo() != null || uri.getPort() != -1
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
-                || path == null || !path.equals(prefix + "hongguo-tv-speed-" +
+                || path == null || !path.equals(prefix + "hongguo-phone-speed-" +
                     (installedPackage.endsWith(".mpv") ? "mpv-" : "") + name + ".apk"))
             throw new IllegalArgumentException("安装包地址不是红果极速公开发行文件");
     }

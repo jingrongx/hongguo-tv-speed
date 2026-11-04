@@ -2207,10 +2207,15 @@
       try { bridge.markOnboardingSeen(); } catch (error) { /* bridge race */ }
     }
   }
+  // Touch-primary devices (car head units, tablets) have no remote keys, so
+  // the remote-control guide would be an unclosable dead end: skip it there.
+  function touchPrimaryDevice() {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+  }
   function showOnboardingOnce() {
     var overlay = document.getElementById('onboarding-overlay');
     if (!overlay) return;
-    if (onboardingSeen()) { overlay.classList.add('is-hidden'); return; }
+    if (onboardingSeen() || touchPrimaryDevice()) { overlay.classList.add('is-hidden'); return; }
     onboardingOpen = true;
     overlay.classList.remove('is-hidden');
     overlay.setAttribute('aria-hidden', 'false');
@@ -3018,6 +3023,7 @@
         playbackMode: activePlayback && activePlayback.mode || '', rangeRequested: rangePlaybackEnabled(),
         source: !!source, waiting: !!(presentation && presentation.waiting), audioHeld: !!playbackAudioHold,
         failed: !!(presentation && presentation.failed) || !document.getElementById('player-retry').classList.contains('is-hidden'),
+        failureNote: (typeof lastPlaybackFailureNote !== 'undefined' ? lastPlaybackFailureNote : '') || '',
         videoVisible: style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) > 0,
         background: applicationInBackground || applicationHidden() }
     };
@@ -4354,15 +4360,18 @@
   // only once the view is back to the bare player — control dock hidden, no
   // failure panel, no side modal. With the dock or a panel up the direction
   // keys just move focus instead of yanking the viewer to another drama.
-  function manualSwitchBlocked() {
-    if (!shell.classList.contains('is-controls-hidden')) return true;
+  function manualSwitchBlocked(allowVisibleControls) {
+    // Direct touch gestures on the video surface are not focus navigation:
+    // they may run with the dock visible. The failure panel and modals still
+    // block them, so an open dialog never gets yanked away by a swipe.
+    if (!allowVisibleControls && !shell.classList.contains('is-controls-hidden')) return true;
     if (playerFailureShown) return true;
     return scanModalOpen() || (typeof accountKeypadOpen === 'function' && accountKeypadOpen()) || supportModalOpen || rankFilterOpen ||
       (typeof playbackCommandMenuOpen !== 'undefined' && playbackCommandMenuOpen);
   }
-  function switchRecommendation(step) {
+  function switchRecommendation(step, allowVisibleControls) {
     if (pageMode() !== 'recommend' || detailModalOpen || playerOptionsOpen || confirmOpen || discussionOpen || applicationInBackground || applicationHidden() || feedIndex < 0) return;
-    if (typeof manualSwitchBlocked === 'function' && manualSwitchBlocked()) return;
+    if (typeof manualSwitchBlocked === 'function' && manualSwitchBlocked(allowVisibleControls)) return;
     var target = feedIndex + step;
     var hops = 0;
     while (hops < 12 && target >= 0 && target < feedItems.length && isKnownVertical(feedItems[target].series_id)) {
@@ -4404,10 +4413,19 @@
       if (!start || start.generation !== feedGeneration || !allowed(event.target) || !event.changedTouches.length) return;
       var point = event.changedTouches[0];
       var dy = point.clientY - start.y, dx = point.clientX - start.x;
-      if (Date.now() - start.at > 1500 || Math.abs(dy) < 60 || Math.abs(dy) < Math.abs(dx) * 1.2) return;
+      if (Date.now() - start.at > 1500) return;
+      // Vertical swipe switches dramas, horizontal swipe switches episodes —
+      // the touch equivalent of the remote's up/down and left/right keys.
+      var vertical = Math.abs(dy) >= 60 && Math.abs(dy) > Math.abs(dx) * 1.2;
+      var horizontal = Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.2;
+      if (!vertical && !horizontal) return;
       event.preventDefault();
       suppressClickUntil = Date.now() + 400;
-      switchRecommendation(dy < 0 ? 1 : -1);
+      if (horizontal) {
+        if (typeof switchPlayerEpisode === 'function') switchPlayerEpisode(dx < 0 ? 1 : -1, true);
+        return;
+      }
+      switchRecommendation(dy < 0 ? 1 : -1, true);
       goFocus(document.getElementById('hero-feed-focus'));
     }, false);
     surface.addEventListener('touchcancel', function () { touch = null; });
@@ -4426,7 +4444,7 @@
       wheelDelta += delta;
       if (Math.abs(wheelDelta) < 60) return;
       wheelConsumed = true;
-      switchRecommendation(wheelDelta > 0 ? 1 : -1);
+      switchRecommendation(wheelDelta > 0 ? 1 : -1, true);
       goFocus(document.getElementById('hero-feed-focus'));
     }, false);
   }
@@ -5022,9 +5040,11 @@
       // the same device within roughly a minute of the previous one, so
       // prefetching one second into the episode burned the whole retry
       // budget against that window and left the switch without a source.
-      // Waiting out most of a short episode puts the prefetch request
-      // minutes away from the current episode's resolve.
-      prefetch_after_seconds: playbackEngineName() === 'mpv' ? 75 : 75,
+      // The core now swaps to a fresh anonymous device when resolving inside
+      // that window, so short episodes can prefetch early: 40% of the
+      // episode duration (20s floor, 75s cap) keeps long episodes on the old
+      // cadence while episodes shorter than the window still get a source.
+      prefetch_after_seconds: Math.min(75, Math.max(20, Math.round((Number(video.duration) || 0) * 0.4))),
       duration: Number(video.duration), position: Number(video.currentTime), paused: video.paused, ended: video.ended,
       stable_seconds: playback.stableSince ? Math.max(0, Date.now() - playback.stableSince) / 1000 : 0,
       started: playback.started, active: playback.generation === feedGeneration && isPlaybackPage() && !applicationInBackground && !applicationHidden() && !qualityPrevious });
@@ -5255,6 +5275,7 @@
       playbackDebug('[Playback] preparation watchdog fired');
       var stall = new Error(uiText('ui.cannotPlayEpisode', '暂时无法播放这集'));
       stall.code = 'UPSTREAM_TIMEOUT';
+      if (typeof notePlaybackFailure === 'function') notePlaybackFailure(stall);
       if (recoverPlaybackPreparation(playback, stall, generation)) return;
       setPlayerStatus(uiText('ui.cannotPlayEpisode', '暂时无法播放这集') + (typeof failureReason === 'function' ? failureReason(stall) : ''), true);
     }, 45000);
@@ -5264,6 +5285,22 @@
   // The counter resets as soon as an episode actually starts.
   var failureAutoRetryTimer = 0;
   var failureAutoRetryCount = 0;
+  // The real cause behind the latest failed preparation, kept for the
+  // playback diagnostics panel: the retry-wait status overwrites the
+  // visible error text, so without this the panel only ever shows the
+  // generic "upstream busy" line.
+  var lastPlaybackFailureNote = '';
+  var lastThrottleWaitSeconds = 0;
+  function notePlaybackFailure(error) {
+    if (typeof failureReason !== 'function') return;
+    var note = failureReason(error) || (error && error.message ? String(error.message) : '');
+    if (note) lastPlaybackFailureNote = note.slice(0, 160);
+    // When the core reported an upstream cooldown window ("约 77 秒"), keep
+    // it so the auto-retry can wait out the gate instead of burning its
+    // budget on guaranteed no-ops inside the window.
+    var wait = /约\s*(\d+)\s*秒/.exec(String(error && error.message || ''));
+    lastThrottleWaitSeconds = wait ? Number(wait[1]) : 0;
+  }
   function cancelFailureAutoRetry() {
     if (failureAutoRetryTimer) { clearTimeout(failureAutoRetryTimer); failureAutoRetryTimer = 0; }
   }
@@ -5275,6 +5312,19 @@
     cancelFailureAutoRetry();
     if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
     var delay = failureAutoRetryDelays[Math.min(failureAutoRetryCount, failureAutoRetryDelays.length - 1)];
+    // Align the retry with the reported cooldown window: firing earlier is a
+    // guaranteed gate rejection that only burns through the retry budget.
+    // The wait comes from the noted error message, with the visible failure
+    // note as a fallback, so odd recovery orders still line up.
+    var throttleWait = typeof lastThrottleWaitSeconds !== 'undefined' ? lastThrottleWaitSeconds : 0;
+    if (!throttleWait && typeof lastPlaybackFailureNote !== 'undefined' && lastPlaybackFailureNote) {
+      var throttleWaitMatch = /约\s*(\d+)\s*秒/.exec(lastPlaybackFailureNote);
+      if (throttleWaitMatch) throttleWait = Number(throttleWaitMatch[1]);
+    }
+    if (throttleWait > 0) {
+      delay = Math.max(delay, throttleWait * 1000 + 3000);
+      if (typeof lastThrottleWaitSeconds !== 'undefined') lastThrottleWaitSeconds = 0;
+    }
     failureAutoRetryTimer = setTimeout(function () {
       failureAutoRetryTimer = 0;
       if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
@@ -5445,6 +5495,8 @@
       video.classList.remove('has-source');
       video.removeAttribute('src');
       video.load();
+      lastPlaybackFailureNote = '';
+      if (typeof lastThrottleWaitSeconds !== 'undefined') lastThrottleWaitSeconds = 0;
       playback.mode = values[1].mode || 'full';
       playback.rangeFallback = uiText('ui.rangeFallback', '分段读取失败，已回退标准播放');
       playback.position = position;
@@ -5466,6 +5518,7 @@
     }).catch(function (error) {
       if (playback !== activePlayback || generation !== feedGeneration) return;
       playbackInfoRequest = null;
+      if (typeof notePlaybackFailure === 'function') notePlaybackFailure(error);
       playback.rangeFallback = uiText('ui.allPlaybackFailed', '分段读取和标准播放准备均失败');
       setPlayerStatus(uiText('ui.episodePlaybackFailed', '这集未能正常播放') + (typeof failureReason === 'function' ? failureReason(error) : ''), true);
     });
@@ -5941,6 +5994,8 @@
         }
         function attachPreparedSource() {
           if (generation !== feedGeneration || request.signal.aborted || !activePlayback) return;
+          lastPlaybackFailureNote = '';
+          if (typeof lastThrottleWaitSeconds !== 'undefined') lastThrottleWaitSeconds = 0;
           rememberVerticalDrama(activePlayback.item.series_id, verticalAutoDrama());
           if (landscapeAutoOnly && activePlayback.autoChain > 0 && !activePlayback.landscapeChecked && pageMode() === 'recommend' &&
               !detailModalOpen && !confirmOpen && !(recovery && recovery.skipLandscapeGate) && verticalAutoDrama()) {
@@ -5981,6 +6036,7 @@
       .catch(function (error) {
         if (generation !== feedGeneration || (pageMode() !== 'recommend' && pageMode() !== 'player')) return;
         playbackInfoRequest = null; playbackPrefetchHandoff = null;
+        if (error.name !== 'AbortError' && typeof notePlaybackFailure === 'function') notePlaybackFailure(error);
         if (recoverPlaybackPreparation(activePlayback, error, generation)) return;
         // A provably empty source inside the automatic chain (cold-start
         // resume, up/down switching) is a dead drama, not a reason to show a
@@ -8549,6 +8605,8 @@
   document.getElementById('detail-series-retry').addEventListener('click', loadSeriesSeasons);
   document.getElementById('end-recommendations-close').addEventListener('click', function () { endRecommendations.close(true); });
   document.getElementById('end-recommendations').addEventListener('click', function (event) { if (event.target === this) endRecommendations.close(true); });
+  // Tap anywhere on the quick guide to dismiss it (touch devices without keys).
+  document.getElementById('onboarding-overlay').addEventListener('click', function () { closeOnboarding(); });
   if (playbackCommandMenu) playbackCommandMenu.addEventListener('click', function (event) { if (event.target === this) closePlaybackCommandMenu(true); });
   ['wheel', 'touchstart', 'mousedown', 'pointerdown'].forEach(function (name) {
     document.getElementById('end-recommendations').addEventListener(name, cancelEndRecommendationAutoplay, true);
@@ -8611,7 +8669,11 @@
   });
   document.getElementById('hero-feed-focus').addEventListener('click', toggleVideo);
   installRecommendationGestures();
-  if (desktopShell && window.HongguoPlaybackPointer) {
+  // The pointer zones drive mouse interaction on the desktop shell and tap
+  // interaction on touch devices (tap = controls, double tap = seek/play).
+  // webOS keeps its own remote-driven surface, so it stays excluded.
+  var touchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if ((desktopShell || touchDevice) && window.HongguoPlaybackPointer) {
     window.HongguoPlaybackPointer.attach(document.getElementById('hero'), {
       isEnabled: function () {
         return isPlaybackPage() && !!activePlayback && !applicationInBackground && !applicationHidden() &&
@@ -8643,6 +8705,7 @@
     });
   }
   document.getElementById('player-options-close').addEventListener('click', function () { closePlayerOptions(); });
+  document.getElementById('more-panel-close').addEventListener('click', function () { closeMorePanel(true); });
   document.getElementById('player-diagnostics-close').addEventListener('click', function () { closePlayerOptions(); });
   document.getElementById('player-diagnostics-refresh').addEventListener('click', refreshPlaybackDiagnostics);
   document.getElementById('control-progress').addEventListener('click', function (event) {

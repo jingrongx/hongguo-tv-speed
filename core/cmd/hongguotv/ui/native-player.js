@@ -238,12 +238,17 @@
     list.forEach(function (listener) { try { listener.call(proxy, detail || { type: name, target: proxy }); } catch (ignored) {} });
   }
   function setClass(name, value) { domVideo.classList.toggle(name, !!value); }
+  function clamp01(value) { value = Number(value); return isFinite(value) ? Math.max(0, Math.min(1, value)) : 0; }
   function syncBounds() {
     try {
       var node = document.querySelector('.hero-media') || domVideo;
       var rect = node.getBoundingClientRect();
-      var width = window.innerWidth || document.documentElement.clientWidth || 1;
-      var height = window.innerHeight || document.documentElement.clientHeight || 1;
+      // The client measures the layout viewport, the same coordinate space
+      // getBoundingClientRect reports in. innerWidth can diverge from it on
+      // scaled viewports and push the fractions out of the native layer's
+      // [0,1] validation range, which silently dropped every update.
+      var width = document.documentElement.clientWidth || window.innerWidth || 1;
+      var height = document.documentElement.clientHeight || window.innerHeight || 1;
       if (rect.width > 1 && rect.height > 1 && bridge.bounds) {
         // Portrait video filling a landscape surface: shrink the native
         // surface to the centered video column so the page's blurred
@@ -256,10 +261,10 @@
           // same math) — a separate estimate leaves a black seam at the seam.
           var hero = document.getElementById('hero');
           if (hero) hero.style.setProperty('--portrait-column', (columnWidth / rect.width * 100).toFixed(3) + '%');
-          bridge.bounds(left / width, rect.top / height, columnWidth / width, rect.height / height);
+          bridge.bounds(clamp01(left / width), clamp01(rect.top / height), clamp01(columnWidth / width), clamp01(rect.height / height));
           return;
         }
-        bridge.bounds(rect.left / width, rect.top / height, rect.width / width, rect.height / height);
+        bridge.bounds(clamp01(rect.left / width), clamp01(rect.top / height), clamp01(rect.width / width), clamp01(rect.height / height));
       }
     } catch (ignored) {}
   }

@@ -117,6 +117,15 @@ public class MainActivity extends Activity {
         settings.setUserAgentString(settings.getUserAgentString() + " HongguoTV-Android");
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        // Honor the page's viewport meta so the UI can adapt to phone and car
+        // screens (portrait head units, high-density displays). Without the
+        // wide-viewport mode Chromium ignores <meta name="viewport"> entirely
+        // and renders the TV layout at device density, oversizing every
+        // control. Text zoom is pinned so a large system font setting cannot
+        // break the TV layout.
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setTextZoom(100);
         // Fetch UI assets from the core embedded in this APK after updates.
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setMediaPlaybackRequiresUserGesture(false);
