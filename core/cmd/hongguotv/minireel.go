@@ -154,6 +154,13 @@ func newMiniReelPlaybackDeviceCache(register func() (miniReelDevice, error)) *mi
 	return &miniReelPlaybackDeviceCache{register: register}
 }
 
+// peek returns the cached identity without registering a new one.
+func (c *miniReelPlaybackDeviceCache) peek() (miniReelDevice, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.device, c.ready
+}
+
 // reset drops the cached anonymous device so the next get() registers a
 // fresh identity from the passport endpoint. Used when persistent upstream
 // soft-blocks suggest the device identity itself is flagged.
@@ -752,38 +759,27 @@ func miniReelNativeOptions(ctx context.Context, vid string) ([]miniReelOption, e
 	return miniReelNativeOptionsEndpoint(ctx, vid, miniReelAPIBase+miniReelAPIPath)
 }
 
-// The upstream risk engine rejects a second video-model request from the
-// same device within roughly a minute of the previous one, so fast episode
-// switches land inside that window and get empty responses. A fresh
-// anonymous device starts with a clean interval clock: swap identities
-// instead of failing into the long escalating cooldown.
-var (
-	miniReelResolveSuccessMu sync.Mutex
-	miniReelResolveSuccessAt time.Time
-)
-
-const miniReelDeviceIntervalWindow = 75 * time.Second
-
-func miniReelMarkResolveSuccess() {
-	miniReelResolveSuccessMu.Lock()
-	miniReelResolveSuccessAt = time.Now()
-	miniReelResolveSuccessMu.Unlock()
-}
-
-func miniReelResolveRecentlySucceeded() bool {
-	miniReelResolveSuccessMu.Lock()
-	defer miniReelResolveSuccessMu.Unlock()
-	return !miniReelResolveSuccessAt.IsZero() && time.Since(miniReelResolveSuccessAt) < miniReelDeviceIntervalWindow
-}
-
+// The upstream allots every anonymous device identity only a handful of
+// video-model resolutions before soft-blocking it: reusing one identity is
+// what turns "watch a few episodes" into "playback failed". Each resolution
+// round therefore starts on a brand-new identity — the quota is never
+// approached, so the failure card (and its cooldown) stops surfacing. If
+// the passport registration itself fails, the previous identity keeps the
+// round alive rather than refusing to play.
 func miniReelNativeOptionsEndpoint(ctx context.Context, vid, endpoint string) ([]miniReelOption, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if miniReelResolveRecentlySucceeded() {
+	previous, hasPrevious := miniReelPlaybackIdentity.peek()
+	if hasPrevious {
 		miniReelPlaybackIdentity.reset()
 	}
 	device, err := miniReelPlaybackIdentity.get()
+	if err != nil && hasPrevious {
+		// Fresh registration failed (endpoint hiccup or its own limit):
+		// serve this round on the previous identity instead of failing.
+		device, err = previous, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("匿名播放设备注册失败，请点击重试再次尝试: %w", err)
 	}
@@ -860,7 +856,6 @@ func miniReelNativeOptionsEndpointWithDevice(ctx context.Context, vid, endpoint 
 		options, err := miniReelNativeOptionsAttemptPolicy(ctx, vid, endpoint, device, nil, attempt)
 		if err == nil {
 			miniReelClearThrottle()
-			miniReelMarkResolveSuccess()
 			// Successes were invisible in diagnostics while every failure
 			// logged; without this line the resolve-interval pattern could
 			// not be measured from device logs.

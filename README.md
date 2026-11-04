@@ -69,8 +69,9 @@
 
 ## 安装
 
-1. 在 [Releases](https://github.com/jingrongx/hongguo-tv-speed/releases) 下载 `hongguo-phone-speed-mpv-<版本>.apk`
-   （MPV 播放内核版，推荐，支持手机与车机）或 `hongguo-phone-speed-<版本>.apk`（标准 WebView 版）
+1. 在 [Releases](https://github.com/jingrongx/hongguo-tv-speed/releases) 下载：
+   `hongguo-tv-speed-mpv-<版本>.apk`（电视 MPV 版，推荐）、`hongguo-phone-speed-mpv-<版本>.apk`（手机/车机 MPV 版，与电视 MPV 版相同安装包）、
+   `hongguo-tv-speed-<版本>.apk`（标准 WebView 版）
 2. 通过 U 盘或 `adb install` 安装到电视、手机或车机（Android 5.0+）
 3. 应用启动后自动检查更新（每小时一次）；也可在"设置 → 应用更新"手动检查
 

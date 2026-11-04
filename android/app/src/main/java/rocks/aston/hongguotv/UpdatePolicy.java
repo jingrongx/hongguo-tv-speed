@@ -57,15 +57,17 @@ final class UpdatePolicy {
         URI uri = URI.create(download);
         String path = uri.getRawPath();
         String prefix = "/" + REPOSITORY + "/releases/download/v" + name + "/";
-        // Speed-edition asset naming, distinct from the upstream project.
-        // 0.2.171+ ships as hongguo-phone-speed-{mpv-}<ver>.apk; the older
-        // hongguo-tv-speed-* names cannot be accepted here because installs
-        // running the previous validator never see this code anyway.
+        // Speed-edition asset naming, distinct from the upstream project. The
+        // MPV build ships twice under two names for TV and phone downloads;
+        // both are accepted here so either can back the mpv update channel.
+        String mpvMark = installedPackage.endsWith(".mpv") ? "mpv-" : "";
+        java.util.List<String> allowed = Arrays.asList(
+                prefix + "hongguo-tv-speed-" + mpvMark + name + ".apk",
+                prefix + "hongguo-phone-speed-mpv-" + name + ".apk");
         if (!"https".equals(uri.getScheme()) || !"github.com".equals(uri.getHost())
                 || uri.getRawUserInfo() != null || uri.getPort() != -1
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
-                || path == null || !path.equals(prefix + "hongguo-phone-speed-" +
-                    (installedPackage.endsWith(".mpv") ? "mpv-" : "") + name + ".apk"))
+                || path == null || !allowed.contains(path))
             throw new IllegalArgumentException("安装包地址不是红果极速公开发行文件");
     }
 

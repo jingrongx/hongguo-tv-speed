@@ -243,8 +243,11 @@ jobs:
           set -e
           test -n "$VERSION" && test -n "$CODE" && test -n "$TAG"
           mkdir -p stage
+          cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-tv-speed-mpv-$VERSION.apk"
+          # The MPV build is identical for TV, phone and car; it ships twice
+          # under two names so downloads match the device at hand.
           cp android/app/build/outputs/apk/mpv/release/app-mpv-release.apk "stage/hongguo-phone-speed-mpv-$VERSION.apk"
-          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-phone-speed-$VERSION.apk"
+          cp android/app/build/outputs/apk/standard/release/app-standard-release.apk "stage/hongguo-tv-speed-$VERSION.apk"
           python3 - "$VERSION" "$CODE" <<'PY'
           import hashlib, io, json, sys
           version, code = sys.argv[1], int(sys.argv[2])
@@ -252,8 +255,8 @@ jobs:
               notes = handle.read().strip()
           base = 'https://github.com/jingrongx/hongguo-tv-speed/releases/download/v' + version + '/'
           variants = (
-              ('mpv', 'com.jingrongx.hongguotv.mpv', 'hongguo-phone-speed-mpv-' + version + '.apk', 'update-mpv.json'),
-              ('standard', 'com.jingrongx.hongguotv', 'hongguo-phone-speed-' + version + '.apk', 'update.json'),
+              ('mpv', 'com.jingrongx.hongguotv.mpv', 'hongguo-tv-speed-mpv-' + version + '.apk', 'update-mpv.json'),
+              ('standard', 'com.jingrongx.hongguotv', 'hongguo-tv-speed-' + version + '.apk', 'update.json'),
           )
           for variant, package, artifact, name in variants:
               with open('stage/' + artifact, 'rb') as handle:
@@ -289,13 +292,14 @@ jobs:
           {
             cat stage/release_notes.md
             echo
-            echo "**MPV 版**（推荐）：hongguo-phone-speed-mpv-$VERSION.apk"
-            echo "**标准版**：hongguo-phone-speed-$VERSION.apk"
+            echo "**电视 MPV 版**（推荐）：hongguo-tv-speed-mpv-$VERSION.apk"
+            echo "**手机 MPV 版**（与电视 MPV 版相同安装包）：hongguo-phone-speed-mpv-$VERSION.apk"
+            echo "**标准版**：hongguo-tv-speed-$VERSION.apk"
           } > stage/release_body.md
           # gh release create also creates the tag at this commit when the
           # tag does not exist yet (branch-push auto releases).
-          gh release create "$TAG" --title "红果极速 v$VERSION"             --notes-file stage/release_body.md --draft=false --prerelease=false             || gh release upload "$TAG" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
-          gh release upload "$TAG" stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+          gh release create "$TAG" --title "红果极速 v$VERSION"             --notes-file stage/release_body.md --draft=false --prerelease=false             || gh release upload "$TAG" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
+          gh release upload "$TAG" stage/hongguo-tv-speed-mpv-$VERSION.apk stage/hongguo-phone-speed-mpv-$VERSION.apk stage/hongguo-tv-speed-$VERSION.apk stage/SHA256SUMS.txt --clobber
           # Re-runs must refresh a stale body, not only the assets.
           gh release edit "$TAG" --notes-file stage/release_body.md
 
