@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 378,
+  "version_code": 379,
   "min_sdk": 21,
-  "version_name": "0.2.178",
+  "version_name": "0.2.179",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19490331,
-  "sha256": "1e5e27a1bce58ad5d2c9e5ed66deebe02365f353f6d7662f187e562d2ee9a9e6",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.178/hongguo-tv-speed-0.2.178.apk",
-  "release_notes": "- release: 对齐 appVersion 至 0.2.178（本地构建此前未同步版本号）",
+  "size": 19490553,
+  "sha256": "0afc2ddcc745218ce3671fb464fda753559d565f87c94cb8f321db95c8864cd5",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.179/hongguo-tv-speed-0.2.179.apk",
+  "release_notes": "- 修复 v0.2.170–v0.2.178 官方安装包全部无法启动的问题（\"本机服务版本不匹配，请重试\"）：发版流水线构建核心时丢失了版本号 `-dev` 后缀，包内核心自报版本与 APK 期望值不一致，启动握手失败直接卡在错误页；现 CI 显式对齐两侧版本号，并在发布前自动校验配对，防止再次漏检\n- 版本不匹配错误页现在会自动弹出原生更新对话框：此前该错误一旦出现，页面永远不会加载，应用内更新随之失效，只能手动重装；现在错误页会自动检查新版本并提示安装，装上修复版即可恢复",
   "variant": "standard"
 }
