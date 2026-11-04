@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 371,
+  "version_code": 372,
   "min_sdk": 21,
-  "version_name": "0.2.171",
+  "version_name": "0.2.172",
   "package_name": "com.jingrongx.hongguotv",
-  "size": 19489479,
-  "sha256": "95a22bf490d7e33c8141414ac081bbfceb3ed4b372312c947b4aad821bf4151d",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.171/hongguo-tv-speed-0.2.171.apk",
-  "release_notes": "- fix(playback): 每次解析轮换匿名设备身份；发版产物分电视/手机 MPV 与标准版三种命名",
+  "size": 19490120,
+  "sha256": "bf1095bb4d1db2f6a72a085db946ab8a1da8d335a678837eee25721cc8f8a400",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.172/hongguo-tv-speed-0.2.172.apk",
+  "release_notes": "- docs: README 高级排版重写——居中头图徽章、三版本下载表、折叠次要内容",
   "variant": "standard"
 }
