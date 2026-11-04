@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 369,
-  "min_sdk": 23,
-  "version_name": "0.2.169",
+  "version_code": 370,
+  "min_sdk": 21,
+  "version_name": "0.2.170",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63293471,
-  "sha256": "8b16e09d13a11ac165621841e7903b7345b3f24650910cf6ba62949874c5f3ed",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.169/hongguo-tv-speed-mpv-0.2.169.apk",
-  "release_notes": "- 修复整体无法播放的问题：上游升级风控，无签名的播放地址请求被静默拒绝（返回空数据）；现按官方客户端方式对取源请求签名，恢复可用\n- 换集卡顿大幅缓解：下一集预取从开播 1 秒调整为 75 秒后发起，避开上游\"同设备短间隔二次取源\"拒绝窗口；预取失败后按 30 秒节奏持续重试（最多 8 次），窗口一重开立即命中\n- 新增全局限流冷却闸：取源被连续拒绝时，界面重试在冷却期内不再冲击上游（此前会形成\"重试越勤越被拒\"的死循环）；成功后自动恢复\n- 冷却期界面明确显示等待时间：失败面板显示\"上游限流，约 N 秒后自动重试\"，自动重试提示带轮次\n- 请求节奏人化：全局取源最小间隔 3 秒，消除 2.5 秒 6 请求的突发特征\n- 横屏参数库定时爬取限速改造：与播放共用出口不再互相拖累，每日自动更新恢复正常节奏",
+  "size": 63316016,
+  "sha256": "7690ad343144c6fbf1faa069ba094763c52e6f178f88a35e8f3fbe51e5cc8f4d",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.170/hongguo-phone-speed-mpv-0.2.170.apk",
+  "release_notes": "- ci: 每次提交 main 自动发布正式版（补丁号自增，跳过清单机器人提交）",
   "variant": "mpv"
 }
