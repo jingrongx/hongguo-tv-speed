@@ -343,16 +343,28 @@ jobs:
           git config user.name "speed-release-bot"
           git config user.email "jingrongx@users.noreply.github.com"
           git fetch origin main
-          git checkout main
+          git checkout -B main origin/main
           cp stage/update-mpv.json update-mpv.json
           cp stage/update.json update.json
           git add update-mpv.json update.json
           git diff --cached --quiet && { echo "manifests unchanged"; exit 0; }
           git commit -m "ci: update manifests for v$VERSION"
-          git push origin main
-          # Point the release tag at the commit that carries the manifests.
-          git tag -f "$TAG"
-          git push -f origin "$TAG"
+          # The daily orientation crawler can move main while this run builds;
+          # a rejected push is retried after rebase instead of failing the run.
+          for attempt in 1 2 3; do
+            if git push origin main; then
+              # Point the release tag at the commit that carries the manifests.
+              git tag -f "$TAG"
+              git push -f origin "$TAG"
+              exit 0
+            fi
+            echo "manifest push rejected (attempt $attempt), rebasing…" >&2
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 5))
+          done
+          echo "manifest push failed after retries" >&2
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
