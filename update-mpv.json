@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version_code": 379,
+  "version_code": 380,
   "min_sdk": 21,
-  "version_name": "0.2.179",
+  "version_name": "0.2.180",
   "package_name": "com.jingrongx.hongguotv.mpv",
-  "size": 63317230,
-  "sha256": "6300bee77c5c25708d246931225d93e38488eded5d4781ef4acb342627a83a97",
-  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.179/hongguo-tv-speed-mpv-0.2.179.apk",
-  "release_notes": "- 修复 v0.2.170–v0.2.178 官方安装包全部无法启动的问题（\"本机服务版本不匹配，请重试\"）：发版流水线构建核心时丢失了版本号 `-dev` 后缀，包内核心自报版本与 APK 期望值不一致，启动握手失败直接卡在错误页；现 CI 显式对齐两侧版本号，并在发布前自动校验配对，防止再次漏检\n- 版本不匹配错误页现在会自动弹出原生更新对话框：此前该错误一旦出现，页面永远不会加载，应用内更新随之失效，只能手动重装；现在错误页会自动检查新版本并提示安装，装上修复版即可恢复",
+  "size": 63324997,
+  "sha256": "bc5aa4fbb16a766ab20fc7beab647ceee3a4518c6664475883cf9431e628964b",
+  "download_url": "https://github.com/jingrongx/hongguo-tv-speed/releases/download/v0.2.180/hongguo-tv-speed-mpv-0.2.180.apk",
+  "release_notes": "- 修复设置页\"侧边栏\"按钮的误导样式：该按钮始终代表当前生效的模式（自动隐藏 / 常驻显示），\"自动隐藏\"明明是开启中的默认模式，此前却显示成灰色的关闭样式，容易被误认为没启用；现在两种模式都以高亮样式显示、靠文字区分，切到常驻显示时下方说明文字也会同步切换\n- 修复选集弹窗右上角按钮\"看不见文字\"的问题：\"追更 / 收藏\"按钮的文字颜色此前和按钮底色几乎相同（浅灰字叠浅灰底），看起来像一个空白方块；现改为深色文字，图标同样恢复可见\n- 修复播放页评论面板正文看不清的问题：评论文字此前是浅灰色，落在白色面板上几乎不可读；现改为与整体界面一致的深色",
   "variant": "mpv"
 }
