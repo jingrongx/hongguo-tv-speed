@@ -5331,12 +5331,21 @@
       if (applicationInBackground || applicationHidden() || !isPlaybackPage() || !playbackRequest) return;
       failureAutoRetryCount++;
       showNotice(uiText('ui.failureAutoRetry', '正在自动重试播放…') + '（第 ' + failureAutoRetryCount + ' 次）');
-      playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position);
+      // The recovery marker keeps the retry from re-showing the opaque
+      // episode-transition card (it would cover the failure panel for the
+      // whole retry circuit) and preserves the recovery budget.
+      playFeedItem(playbackRequest.index, playbackRequest.episode, playbackRequest.position, null, null, { recoveryAttempts: failureAutoRetryCount });
     }, delay);
     // Tell the viewer when the next automatic attempt fires so waiting
     // through an upstream throttle window looks intentional, not frozen.
+    // Updated in place on purpose: routing this through setPlayerStatus(…, true)
+    // re-enters its failed branch, which schedules the retry again, and the
+    // two calls recurse until the page's stack overflows — thousands of
+    // revealControls/goFocus iterations block the JS thread for minutes, so
+    // every remote key queues up and the box looks completely dead.
     var waitSeconds = Math.round(delay / 1000);
-    setPlayerStatus(uiText('ui.failureAutoRetryWait', '上游繁忙，约 {seconds} 秒后自动重试').replace('{seconds}', String(waitSeconds)), true);
+    var statusText = document.getElementById('player-status-text');
+    if (statusText) statusText.textContent = uiText('ui.failureAutoRetryWait', '上游繁忙，约 {seconds} 秒后自动重试', { seconds: waitSeconds });
   }
   function finishPlaybackPreparation(playback) {
     var hero = document.getElementById('hero');
@@ -9513,3 +9522,4 @@
     fetchOrientationDatabase();
     if (!initialHomeProgram || !window.HongguoTV.openHomeProgram(initialHomeProgram)) loadCatalog(uiText('nav.recommend', '推荐'));
 }());
+
