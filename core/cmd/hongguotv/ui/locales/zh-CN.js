@@ -238,6 +238,7 @@
     'settings.sidebarPermanentEnabled': '常驻显示',
     'settings.sidebarPermanentDisabled': '自动隐藏',
     'settings.sidebarModeState': '自动隐藏时，按遥控器菜单键或 OK 键呼出侧边栏，返回键收起。',
+    'settings.sidebarModeStatePermanent': '常驻显示时，侧边栏始终显示，不会被自动收起。',
     'settings.sidebarPermanentOn': '已切换为常驻侧边栏',
     'settings.sidebarPermanentOff': '已切换为沉浸全屏播放',
     'settings.landscapeOnly': '仅自动播放横屏剧',

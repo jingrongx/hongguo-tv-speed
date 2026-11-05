@@ -442,7 +442,7 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 .discussion-head h2 { font-size: 26px; }
 .discussion-close { color: #1d2534; background: #d9deea; border-radius: 8px; padding: 10px 16px; }
 .discussion-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 4px 30px; }
-.discussion-item { position: relative; padding: 18px 6px; margin: 8px 0; border-bottom: 1px solid #c9d0dc; color: #e8e8ed; border-radius: 8px; }
+.discussion-item { position: relative; padding: 18px 6px; margin: 8px 0; border-bottom: 1px solid #c9d0dc; color: #1d2534; border-radius: 8px; }
 .discussion-item strong { display: block; color: #5b9dff; font-size: 18px; }
 .discussion-item p { font-size: 20px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: break-word; }
 .discussion-item small { color: #4d5766; }
@@ -783,7 +783,7 @@ html.desktop-shell .hero-media { -webkit-user-select: none; user-select: none; }
 #detail-meta { margin: 6px 0 0; color: #4d5766; font-size: 16px; }
 .detail-intro { display: -webkit-box; overflow: hidden; max-height: 4.2em; margin: 9px 0 0; color: #3a4353; font-size: 16px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .detail-header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.detail-header-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 82px; min-height: 40px; padding: 0 11px; color: #dedee6; background: #d9deea; border: 1px solid #494a56; border-radius: 7px; font-size: 16px; }
+.detail-header-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 82px; min-height: 40px; padding: 0 11px; color: #1d2534; background: #d9deea; border: 1px solid #c9d0dc; border-radius: 7px; font-size: 16px; }
 .detail-header-action svg { width: 18px; height: 18px; fill: none; stroke: currentColor; }
 .detail-header-action.is-active { color: #1d2534; background: rgba(91,157,255,.24); border-color: #5b9dff; }
 .detail-header-action.is-focused, .detail-header-action:focus:not(.pointer-focus-muted), .detail-cast-item.is-focused, .detail-cast-item:focus:not(.pointer-focus-muted), .detail-cast-more.is-focused, .detail-cast-more:focus:not(.pointer-focus-muted) { outline: none; box-shadow: 0 0 0 3px rgba(46,123,239,.9); }

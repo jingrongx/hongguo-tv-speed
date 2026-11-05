@@ -235,6 +235,7 @@
     'settings.sidebarPermanentEnabled': '常駐顯示',
     'settings.sidebarPermanentDisabled': '自動隱藏',
     'settings.sidebarModeState': '自動隱藏時，按遙控器選單鍵或 OK 鍵呼出側邊欄，返回鍵收起。',
+    'settings.sidebarModeStatePermanent': '常駐顯示時，側邊欄始終顯示，不會被自動收起。',
     'settings.sidebarPermanentOn': '已切換為常駐側邊欄',
     'settings.sidebarPermanentOff': '已切換為沉浸全屏播放',
     'settings.landscapeOnly': '僅自動播放橫屏劇',

@@ -9410,11 +9410,13 @@
   function renderSidebarModeSettings() {
     var toggle = document.getElementById('sidebar-mode-toggle');
     if (!toggle) return;
-    toggle.setAttribute('aria-pressed', sidebarPermanent() ? 'true' : 'false');
-    toggle.classList.toggle('account-primary', sidebarPermanent());
+    // The button always shows the current mode, and both modes are active
+    // states, so the button stays highlighted; the label tells them apart.
+    toggle.setAttribute('aria-pressed', 'true');
+    toggle.classList.add('account-primary');
     toggle.textContent = uiText(sidebarPermanent() ? 'settings.sidebarPermanentEnabled' : 'settings.sidebarPermanentDisabled', sidebarPermanent() ? '常驻显示' : '自动隐藏');
     var state = document.getElementById('sidebar-mode-state');
-    if (state) state.textContent = uiText('settings.sidebarModeState', '自动隐藏时，按遥控器菜单键呼出侧边栏，返回键收起。');
+    if (state) state.textContent = uiText(sidebarPermanent() ? 'settings.sidebarModeStatePermanent' : 'settings.sidebarModeState', sidebarPermanent() ? '常驻显示时，侧边栏始终显示，不会被自动收起。' : '自动隐藏时，按遥控器菜单键呼出侧边栏，返回键收起。');
   }
   var sidebarModeToggle = document.getElementById('sidebar-mode-toggle');
   if (sidebarModeToggle) {
